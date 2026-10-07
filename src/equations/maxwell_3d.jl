@@ -482,3 +482,36 @@ end
                        equations)
     return surface_flux(u_inner, u_outer, normal_direction, equations)
 end
+
+const MaxwellBoundaryCondition = Union{BoundaryConditionPerfectElectricConductor,
+                                       BoundaryConditionPerfectMagneticConductor,
+                                       BoundaryConditionSilverMueller,
+                                       BoundaryConditionIncidentField}
+
+# TreeMesh passes the axis and the side instead of a normal vector.
+@inline function (boundary_condition::MaxwellBoundaryCondition)(u_inner,
+                                                                orientation::Integer,
+                                                                direction, x, t,
+                                                                surface_flux,
+                                                                equations::MaxwellEquations3D)
+    RealT = eltype(u_inner)
+    normal_direction = SVector(ntuple(i -> i == orientation ? one(RealT) : zero(RealT),
+                                      Val(3)))
+    return boundary_condition(u_inner, normal_direction, direction, x, t, surface_flux,
+                              equations)
+end
+
+# StructuredMesh passes inward normals on the negative sides (odd directions).
+@inline function (boundary_condition::MaxwellBoundaryCondition)(u_inner,
+                                                                normal_direction::AbstractVector,
+                                                                direction, x, t,
+                                                                surface_flux,
+                                                                equations::MaxwellEquations3D)
+    if isodd(direction)
+        return -boundary_condition(u_inner, -normal_direction, x, t, surface_flux,
+                                   equations)
+    else
+        return boundary_condition(u_inner, normal_direction, x, t, surface_flux,
+                                  equations)
+    end
+end

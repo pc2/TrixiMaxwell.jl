@@ -185,6 +185,24 @@ end
               dirichlet(u_inner, normal, x, t, surface_flux, equations)
     end
 
+    # TreeMesh and StructuredMesh signatures follow Trixi's Dirichlet convention
+    for direction in 1:6, surface_flux in (flux_upwind, flux_central_penalty)
+        orientation = (direction + 1) ÷ 2
+        unit_normal = SVector(ntuple(i -> i == orientation ? 1.0 : 0.0, 3))
+        @test incident(u_inner, orientation, direction, x, t, surface_flux,
+                       equations) ≈
+              dirichlet(u_inner, orientation, direction, x, t, surface_flux, equations)
+        @test incident(u_inner, unit_normal, direction, x, t, surface_flux,
+                       equations) ≈
+              dirichlet(u_inner, unit_normal, direction, x, t, surface_flux, equations)
+        @test boundary_condition_perfect_electric_conductor(u_inner, orientation,
+                                                            direction, x, t,
+                                                            surface_flux, equations) ==
+              boundary_condition_perfect_electric_conductor(u_inner, unit_normal,
+                                                            direction, x, t,
+                                                            surface_flux, equations)
+    end
+
     # mirrored tangential fields cancel in the central average
     f_pec = boundary_condition_perfect_electric_conductor(u_inner, normal, x, t,
                                                           flux_central_penalty,

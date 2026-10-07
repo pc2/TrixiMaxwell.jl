@@ -12,13 +12,15 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection
 - Gambit and Gmsh reader
 - VTK output writer and point probes
+- Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`
 
-Elixirs can be found in `examples/dgmulti_3d/`.
-They are using meshes from [nodal-dg](https://github.com/tcew/nodal-dg), [MIDG2](https://github.com/tcew/MIDG2) and [OpenSEMBA](https://github.com/OpenSEMBA/dgtd).
+Elixirs can be found in `examples/`, grouped by mesh type.
+The tetrahedral ones in `examples/dgmulti_3d/` use meshes from [nodal-dg](https://github.com/tcew/nodal-dg), [MIDG2](https://github.com/tcew/MIDG2) and [OpenSEMBA](https://github.com/OpenSEMBA/dgtd).
+All other `Trixi.jl` mesh types are tested only on the cavity example.
 
 Currently they cover
+- PEC cavity
 - periodic plane wave
-- PEC cavities on structured and imported meshes
 - a lossy cavity
 - Silver-Mueller absorption,
 - Fresnel half space

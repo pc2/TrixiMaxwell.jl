@@ -18,6 +18,10 @@ const TRIXI_TEST = get(ENV, "TRIXI_TEST", "all")
         include("test_dgmulti_3d.jl")
     end
 
+    @time if TRIXI_TEST == "all" || TRIXI_TEST == "dgsem_3d"
+        include("test_dgsem_3d.jl")
+    end
+
     @time if TRIXI_TEST == "all" || TRIXI_TEST == "meshes"
         include("test_meshes.jl")
     end

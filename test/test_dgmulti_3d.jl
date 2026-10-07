@@ -15,6 +15,29 @@ isdir(outdir) && rm(outdir, recursive = true)
 @testset "DGMulti 3D" begin
 #! format: noindent
 
+@trixi_testset "elixir_maxwell_3d_cavity_curved.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_cavity_curved.jl"),
+                        tspan=(0.0, 0.2),
+                        l2=[
+                            0.0010091560891843157,
+                            0.0010036108487806695,
+                            0.0025058614712118767,
+                            0.002031940528267993,
+                            0.0020835764266782597,
+                            0.000589928470461924
+                        ],
+                        linf=[
+                            0.011110261939409474,
+                            0.015067271450955258,
+                            0.04272391568467007,
+                            0.016574022972575944,
+                            0.023595499357964768,
+                            0.0055817353782471645
+                        ])
+    @test mesh isa DGMultiMesh{3, Trixi.NonAffine}
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
 @trixi_testset "elixir_maxwell_3d_periodic.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_periodic.jl"),
                         tspan=(0.0, 0.1),

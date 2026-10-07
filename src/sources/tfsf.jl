@@ -57,17 +57,18 @@ function Trixi.calc_single_boundary_flux!(cache, t, tfsf::TotalFieldScatteredFie
     (; mapP, xyzf, nxyzJ, Jf) = md
     (; surface_flux) = dg.surface_integral
     num_pts_per_face = rd.Nfq ÷ StartUpDG.num_faces(rd.element_type)
+    (; faces, signs, incident_field) = tfsf
 
-    Trixi.@threaded for index in eachindex(tfsf.faces)
-        face = tfsf.faces[index]
-        sign = tfsf.signs[index]
+    Trixi.@threaded for index in eachindex(faces)
+        face = faces[index]
+        sign = signs[index]
         for i in Base.OneTo(num_pts_per_face)
             idM = (face - 1) * num_pts_per_face + i
             idP = mapP[idM]
             x = SVector{3}(getindex.(xyzf, idM))
             normal = SVector{3}(getindex.(nxyzJ, idM)) / Jf[idM]
 
-            u_incident = tfsf.incident_field(x, t, equations)
+            u_incident = incident_field(x, t, equations)
             uM = u_face_values[idM]
             uP = u_face_values[idP]
             uP_corrected = assemble(electric_field(uP) + sign * electric_field(u_incident),

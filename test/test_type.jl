@@ -56,6 +56,15 @@ include("test_trixi.jl")
                                        BoundaryConditionIncidentField(initial_condition_convergence_test))
                 @test eltype(@inferred boundary_condition(u, normal_direction, x, t,
                                                           flux_upwind, equations)) == RealT
+                for direction in (1, 2)
+                    @test eltype(@inferred boundary_condition(u, normal_direction,
+                                                              direction, x, t,
+                                                              flux_upwind, equations)) ==
+                          RealT
+                    @test eltype(@inferred boundary_condition(u, 1, direction, x, t,
+                                                              flux_upwind, equations)) ==
+                          RealT
+                end
             end
 
             @test eltype(@inferred cons2prim(u, equations)) == RealT
