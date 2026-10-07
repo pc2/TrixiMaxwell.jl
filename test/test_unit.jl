@@ -712,6 +712,19 @@ end
               for i in eachindex(points))
     @test_throws ArgumentError PointEvaluator([SVector(1.5, 0.0, 0.0)], semi)
 
+    # curved tetrahedra: the coordinates are part of the element mapping
+    warp(x, y, z) = (x, y, z) .+ 0.05 * sinpi(x) * sinpi(y) * sinpi(z)
+    curved = DGMultiMesh(solver, (4, 4, 4), warp)
+    coordinates(x, t, equations) = SVector(x[1], x[2], x[3], 0.0, 0.0, 0.0)
+    semi_curved = SemidiscretizationHyperbolic(curved, MaxwellEquations3D(),
+                                               coordinates,
+                                               solver;
+                                               boundary_conditions = boundary_condition_perfect_electric_conductor)
+    u0_curved = semidiscretize(semi_curved, (0.0, 1.0)).u0
+    values_curved = PointEvaluator(points, semi_curved)(u0_curved, semi_curved)
+    @test all(isapprox(values_curved[i][1:3], points[i]; atol = 1e-12)
+              for i in eachindex(points))
+
     wave = PlaneWave((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), GaussianPulse(0.2))
     tfsf = TotalFieldScatteredField(wave, mesh, x -> all(abs.(x) .< 0.5))
     # six box faces, 2 x 2 cells each, two triangles per cell, both sides
@@ -860,6 +873,36 @@ end
         end
         # the interpolated metric terms of the warped mesh alias the products
         rtol = mesh isa StructuredMesh ? 5.0e-2 : 1.0e-12
+        @test isapprox(analyze(:l2_dive), 3 * sqrt(8.0); rtol)
+        @test isapprox(analyze(:linf_dive), 3.0; rtol)
+        @test isapprox(analyze(:l2_divh), sqrt(4 * 2 / 3 * 4); rtol)
+        @test isapprox(analyze(:linf_divh), 2.0; rtol)
+    end
+end
+
+@timed_testset "Divergence diagnostics on DGMulti meshes" begin
+    solver = DGMulti(polydeg = 3, element_type = Tet(),
+                     approximation_type = Polynomial(),
+                     surface_integral = SurfaceIntegralWeakForm(flux_upwind),
+                     volume_integral = VolumeIntegralWeakForm())
+    equations = MaxwellEquations3D()
+    # div E = 3, div H = 2x
+    fields(x, t, equations) = SVector(x[1], x[2], x[3], x[1]^2, 0.0, 0.0)
+    warp(x, y, z) = (x, y, z) .+ 0.05 * sinpi(x) * sinpi(y) * sinpi(z)
+    meshes = (DGMultiMesh(solver, (4, 4, 4); coordinates_min = (-1.0, -1.0, -1.0),
+                          coordinates_max = (1.0, 1.0, 1.0)),
+              DGMultiMesh(solver, (4, 4, 4), warp))
+    for mesh in meshes
+        semi = SemidiscretizationHyperbolic(mesh, equations, fields, solver;
+                                            boundary_conditions = boundary_condition_perfect_electric_conductor)
+        u = Trixi.wrap_array(semidiscretize(semi, (0.0, 1.0)).u0, semi)
+        _, _, _, cache = Trixi.mesh_equations_solver_cache(semi)
+        function analyze(name)
+            Trixi.analyze(Val(name), nothing, u, 0.0, mesh, equations,
+                          solver, cache)
+        end
+        # the interpolated metric terms of the warped mesh alias the products
+        rtol = mesh.md.mesh_type isa StartUpDG.CurvedMesh ? 1.0e-1 : 1.0e-12
         @test isapprox(analyze(:l2_dive), 3 * sqrt(8.0); rtol)
         @test isapprox(analyze(:linf_dive), 3.0; rtol)
         @test isapprox(analyze(:l2_divh), sqrt(4 * 2 / 3 * 4); rtol)

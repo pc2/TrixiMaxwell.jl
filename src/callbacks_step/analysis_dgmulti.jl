@@ -4,15 +4,15 @@ function Trixi.default_analysis_integrals(::MaxwellEquations3D)
 end
 
 function l2_divergence(components, mesh::DGMultiMesh, dg::DGMulti, cache)
-    (; md) = mesh
     rd = dg.basis
     uEltype = eltype(first(components))
     local_divergence = zeros(uEltype, size(first(components), 1))
+    buffers = divergence_buffers(uEltype, mesh, dg)
     l2norm_squared = zero(uEltype)
     for element in Trixi.eachelement(mesh, dg, cache)
-        Trixi.compute_local_divergence!(local_divergence, element,
-                                        view.(components, :, element), mesh, dg, cache)
-        l2norm_squared += md.J[1, element] * dot(local_divergence, rd.M, local_divergence)
+        local_divergence!(local_divergence, element, view.(components, :, element),
+                          mesh, dg, cache, buffers)
+        l2norm_squared += element_l2_squared(local_divergence, element, mesh, rd, buffers)
     end
     return sqrt(l2norm_squared)
 end
@@ -20,13 +20,60 @@ end
 function linf_divergence(components, mesh::DGMultiMesh, dg::DGMulti, cache)
     uEltype = eltype(first(components))
     local_divergence = zeros(uEltype, size(first(components), 1))
+    buffers = divergence_buffers(uEltype, mesh, dg)
     linfnorm = zero(uEltype)
     for element in Trixi.eachelement(mesh, dg, cache)
-        Trixi.compute_local_divergence!(local_divergence, element,
-                                        view.(components, :, element), mesh, dg, cache)
+        local_divergence!(local_divergence, element, view.(components, :, element),
+                          mesh, dg, cache, buffers)
         linfnorm = max(linfnorm, maximum(abs, local_divergence))
     end
     return linfnorm
+end
+
+const CurvedDGMultiMesh = DGMultiMesh{<:Any, <:Trixi.NonAffine}
+
+divergence_buffers(uEltype, mesh::DGMultiMesh, dg) = nothing
+function divergence_buffers(uEltype, mesh::CurvedDGMultiMesh, dg)
+    rd = dg.basis
+    return (; derivative = zeros(uEltype, rd.Np),
+            quadrature = zeros(uEltype, length(rd.wq)))
+end
+
+# Trixi's affine kernel returns the divergence times the Jacobian.
+function local_divergence!(local_divergence, element, vector_field, mesh::DGMultiMesh,
+                           dg, cache, buffers)
+    Trixi.compute_local_divergence!(local_divergence, element, vector_field, mesh, dg,
+                                    cache)
+    local_divergence ./= mesh.md.J[1, element]
+    return nothing
+end
+
+# Metric terms and Jacobian of curved elements are stored at the nodes.
+function local_divergence!(local_divergence, element, vector_field,
+                           mesh::CurvedDGMultiMesh, dg, cache, buffers)
+    (; md) = mesh
+    rd = dg.basis
+    (; derivative) = buffers
+    fill!(local_divergence, zero(eltype(local_divergence)))
+    for i in 1:3, j in 1:3
+        Trixi.mul!(derivative, rd.Drst[j], vector_field[i])
+        for n in eachindex(local_divergence)
+            local_divergence[n] += md.rstxyzJ[i, j][n, element] * derivative[n] /
+                                   md.J[n, element]
+        end
+    end
+    return nothing
+end
+
+function element_l2_squared(local_divergence, element, mesh::DGMultiMesh, rd, buffers)
+    return mesh.md.J[1, element] * dot(local_divergence, rd.M, local_divergence)
+end
+
+function element_l2_squared(local_divergence, element, mesh::CurvedDGMultiMesh, rd,
+                            buffers)
+    (; quadrature) = buffers
+    Trixi.mul!(quadrature, rd.Vq, local_divergence)
+    return sum(mesh.md.wJq[q, element] * quadrature[q]^2 for q in eachindex(quadrature))
 end
 
 function field_components(u, indices::NTuple{N, Int}) where {N}

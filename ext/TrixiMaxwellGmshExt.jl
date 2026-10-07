@@ -3,7 +3,9 @@ module TrixiMaxwellGmshExt
 using TrixiMaxwell: TrixiMaxwell, ImportedMesh
 using Gmsh: gmsh
 
-function TrixiMaxwell._read_gmsh(path::AbstractString; size_factor = 1.0, verbose = false)
+function TrixiMaxwell._read_gmsh(path::AbstractString; size_factor = 1.0, order = 1,
+                                 verbose = false)
+    order in (1, 2) || throw(ArgumentError("order must be 1 or 2, got $order"))
     isfile(path) || throw(ArgumentError("file $path does not exist"))
     initialized_here = !Bool(gmsh.isInitialized())
     initialized_here && gmsh.initialize()
@@ -15,8 +17,9 @@ function TrixiMaxwell._read_gmsh(path::AbstractString; size_factor = 1.0, verbos
             # a geometry file: mesh it, scaling all prescribed sizes by size_factor
             gmsh.option.setNumber("Mesh.CharacteristicLengthFactor", size_factor)
             gmsh.model.mesh.generate(3)
-        elseif size_factor != 1.0
-            throw(ArgumentError("size_factor applies to geometry files only, $path already contains a mesh"))
+            order == 2 && gmsh.model.mesh.setOrder(2)
+        elseif size_factor != 1.0 || order != 1
+            throw(ArgumentError("size_factor and order apply to geometry files only, $path already contains a mesh"))
         end
         return ImportedMesh(gmsh_mesh_data(path))
     finally
@@ -27,8 +30,9 @@ function TrixiMaxwell._read_gmsh(path::AbstractString; size_factor = 1.0, verbos
 end
 
 # Extract the current Gmsh model into plain arrays and dictionaries: corner
-# vertices of all tetrahedra, physical tag per element, and sorted vertex triples
-# of all triangles in physical surface groups.
+# vertices of all tetrahedra, physical tag per element, sorted vertex triples
+# of all triangles in physical surface groups, and the mid-edge nodes of
+# quadratic tetrahedra.
 function gmsh_mesh_data(path)
     node_tags, coordinates, _ = gmsh.model.mesh.getNodes()
     node_index = Dict{Int, Int}(Int(tag) => i for (i, tag) in enumerate(node_tags))
@@ -38,6 +42,7 @@ function gmsh_mesh_data(path)
 
     EToV = Vector{NTuple{4, Int}}()
     element_groups = Int[]
+    edge_nodes = Dict{NTuple{2, Int}, NTuple{3, Float64}}()
     for (_, entity) in gmsh.model.getEntities(3)
         physical = gmsh.model.getPhysicalGroupsForEntity(3, entity)
         length(physical) <= 1 ||
@@ -45,12 +50,19 @@ function gmsh_mesh_data(path)
         group = isempty(physical) ? 0 : Int(first(physical))
         types, _, nodes = gmsh.model.mesh.getElements(3, entity)
         for (element_type, element_nodes) in zip(types, nodes)
-            name, _, _, nodes_per_element, _, _ = gmsh.model.mesh.getElementProperties(element_type)
+            name, _, element_order, nodes_per_element, local_coordinates, _ = gmsh.model.mesh.getElementProperties(element_type)
             startswith(name, "Tetrahedron") ||
                 throw(ArgumentError("$path contains $name elements, only tetrahedra are supported"))
+            edges = element_order == 2 ? edge_vertex_pairs(local_coordinates) : ()
             for offset in 0:nodes_per_element:(length(element_nodes) - 1)
-                push!(EToV, ntuple(i -> node_index[Int(element_nodes[offset + i])], 4))
+                vertices = ntuple(i -> node_index[Int(element_nodes[offset + i])], 4)
+                push!(EToV, vertices)
                 push!(element_groups, group)
+                for (k, (i, j)) in enumerate(edges)
+                    node = node_index[Int(element_nodes[offset + 4 + k])]
+                    edge_nodes[minmax(vertices[i], vertices[j])] = (VX[node], VY[node],
+                                                                    VZ[node])
+                end
             end
         end
     end
@@ -88,7 +100,23 @@ function gmsh_mesh_data(path)
 
     connectivity = permutedims(reduce(hcat, collect.(EToV)))
     return (; vertex_coordinates = (VX, VY, VZ), EToV = connectivity, element_groups,
-            group_names, face_sets, face_set_names)
+            group_names, face_sets, face_set_names, edge_nodes)
+end
+
+# Vertex pair of each of the six mid-edge nodes of a quadratic tetrahedron, found
+# from the reference coordinates of its ten nodes.
+function edge_vertex_pairs(local_coordinates)
+    reference = [local_coordinates[(3 * n - 2):(3 * n)] for n in 1:10]
+    pairs = NTuple{2, Int}[]
+    for n in 5:10
+        k = findfirst(((i, j),) -> isapprox((reference[i] + reference[j]) / 2,
+                                            reference[n]; atol = 1e-12),
+                      [(i, j) for i in 1:4 for j in (i + 1):4])
+        k === nothing &&
+            throw(ArgumentError("node $n of a quadratic tetrahedron is not on an edge"))
+        push!(pairs, [(i, j) for i in 1:4 for j in (i + 1):4][k])
+    end
+    return pairs
 end
 
 end # module

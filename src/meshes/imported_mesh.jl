@@ -1,15 +1,18 @@
 """
     ImportedMesh(vertex_coordinates, EToV; element_groups, group_names,
-                 face_sets, face_set_names)
+                 face_sets, face_set_names, edge_nodes)
 
 Linear tetrahedral mesh as read from a file, before any solver-specific
 processing. `vertex_coordinates` is a tuple of three coordinate vectors, `EToV`
 the `K x 4` element-to-vertex connectivity. `element_groups` holds one integer
 tag per element and `face_sets` maps an integer tag to the faces of that set,
 each face given by its three vertex ids. Names are optional and map a tag to a
-string. Tetrahedra with negative Jacobian are reoriented on construction.
+string. `edge_nodes` maps a sorted pair of vertex ids to the coordinates of the
+mid-edge node of a quadratic tetrahedron; it is empty for straight-sided meshes.
+Tetrahedra with negative Jacobian are reoriented on construction.
 
-Build a solver mesh with [`DGMultiMesh`](@ref)`(dg, imported)`.
+Build a solver mesh with [`DGMultiMesh`](@ref)`(dg, imported)`, curved if
+`edge_nodes` is not empty.
 """
 struct ImportedMesh{RealT <: Real}
     vertex_coordinates::NTuple{3, Vector{RealT}}
@@ -18,13 +21,15 @@ struct ImportedMesh{RealT <: Real}
     group_names::Dict{Int, String}
     face_sets::Dict{Int, Vector{NTuple{3, Int}}}
     face_set_names::Dict{Int, String}
+    edge_nodes::Dict{NTuple{2, Int}, NTuple{3, RealT}}
 end
 
 function ImportedMesh(vertex_coordinates::NTuple{3, AbstractVector}, EToV::AbstractMatrix;
                       element_groups = ones(Int, size(EToV, 1)),
                       group_names = Dict{Int, String}(),
                       face_sets = Dict{Int, Vector{NTuple{3, Int}}}(),
-                      face_set_names = Dict{Int, String}())
+                      face_set_names = Dict{Int, String}(),
+                      edge_nodes = Dict{NTuple{2, Int}, NTuple{3, Float64}}())
     VX, VY, VZ = vertex_coordinates
     num_vertices = length(VX)
     if length(VY) != num_vertices || length(VZ) != num_vertices
@@ -59,9 +64,23 @@ function ImportedMesh(vertex_coordinates::NTuple{3, AbstractVector}, EToV::Abstr
         sorted_sets[tag] = [Tuple(sort(collect(face))) for face in faces]
     end
 
+    sorted_edges = Dict{NTuple{2, Int}, NTuple{3, RealT}}()
+    for (edge, node) in edge_nodes
+        all(v -> 1 <= v <= num_vertices, edge) ||
+            throw(ArgumentError("edge node given for edge $edge with vertex ids outside 1:$num_vertices"))
+        sorted_edges[minmax(edge...)] = NTuple{3, RealT}(node)
+    end
+    if !isempty(sorted_edges)
+        for element in axes(connectivity, 1), i in 1:4, j in (i + 1):4
+            edge = minmax(connectivity[element, i], connectivity[element, j])
+            haskey(sorted_edges, edge) ||
+                throw(ArgumentError("edge $edge of element $element has no edge node"))
+        end
+    end
+
     return ImportedMesh{RealT}(coordinates, connectivity, Vector{Int}(element_groups),
                                Dict{Int, String}(group_names), sorted_sets,
-                               Dict{Int, String}(face_set_names))
+                               Dict{Int, String}(face_set_names), sorted_edges)
 end
 
 # Plain mesh data as returned by the file readers: a NamedTuple with the fields of
@@ -71,7 +90,9 @@ function ImportedMesh(data::NamedTuple)
                         element_groups = data.element_groups,
                         group_names = data.group_names,
                         face_sets = data.face_sets,
-                        face_set_names = data.face_set_names)
+                        face_set_names = data.face_set_names,
+                        edge_nodes = get(data, :edge_nodes,
+                                         Dict{NTuple{2, Int}, NTuple{3, Float64}}()))
 end
 
 num_vertices(imported::ImportedMesh) = length(first(imported.vertex_coordinates))
@@ -79,7 +100,8 @@ num_elements(imported::ImportedMesh) = size(imported.EToV, 1)
 
 function Base.show(io::IO, imported::ImportedMesh{RealT}) where {RealT}
     print(io, "ImportedMesh{", RealT, "} with ", num_vertices(imported), " vertices, ",
-          num_elements(imported), " tetrahedra, ",
+          num_elements(imported), isempty(imported.edge_nodes) ? "" : " quadratic",
+          " tetrahedra, ",
           length(unique(imported.element_groups)), " element groups, ",
           length(imported.face_sets), " face sets")
 end
@@ -179,7 +201,9 @@ end
 
 Build the solver mesh of an imported tetrahedral mesh. Face sets of the file
 become boundary keys, see [`face_set_key`](@ref). `is_on_boundary` adds
-coordinate-predicate boundaries in the style of Trixi's `DGMultiMesh`.
+coordinate-predicate boundaries in the style of Trixi's `DGMultiMesh`. With
+edge nodes, the elements are mapped by their quadratic shape functions and the
+mesh is `Curved()`.
 """
 function Trixi.DGMultiMesh(dg::DGMulti{3}, imported::ImportedMesh;
                            is_on_boundary = nothing, allow_untagged_boundary = false)
@@ -192,6 +216,41 @@ function Trixi.DGMultiMesh(dg::DGMulti{3}, imported::ImportedMesh;
     extra = is_on_boundary === nothing ? NamedTuple() :
             StartUpDG.tag_boundary_faces(md, is_on_boundary)
     boundary_faces = boundary_face_sets(imported, md, rd.fv; extra, allow_untagged_boundary)
-    return Trixi.DGMultiMesh(dg, Trixi.GeometricTermsType(Trixi.VertexMapped(), dg), md,
+    if isempty(imported.edge_nodes)
+        return Trixi.DGMultiMesh(dg, Trixi.GeometricTermsType(Trixi.VertexMapped(), dg),
+                                 md, boundary_faces)
+    end
+    md_curved = StartUpDG.MeshData(rd, md, quadratic_node_coordinates(imported, rd)...)
+    minimum(md_curved.J) > 0 ||
+        throw(ArgumentError("the quadratic elements have a non-positive Jacobian"))
+    return Trixi.DGMultiMesh(dg, Trixi.GeometricTermsType(Trixi.Curved(), dg), md_curved,
                              boundary_faces)
+end
+
+# Coordinates of the nodes of `rd` under the quadratic map of every element, with
+# the vertices of `EToV` at the reference vertices (-1, -1, -1), (1, -1, -1),
+# (-1, 1, -1) and (-1, -1, 1).
+function quadratic_node_coordinates(imported::ImportedMesh, rd)
+    (; EToV, edge_nodes) = imported
+    VX, VY, VZ = imported.vertex_coordinates
+    r, s, t = rd.rst
+    barycentric = (-(1 .+ r .+ s .+ t) / 2, (1 .+ r) / 2, (1 .+ s) / 2, (1 .+ t) / 2)
+    x, y, z = (zeros(eltype(VX), length(r), size(EToV, 1)) for _ in 1:3)
+    for element in axes(EToV, 1)
+        vertices = ntuple(i -> EToV[element, i], 4)
+        for i in 1:4
+            weight = barycentric[i] .* (2 .* barycentric[i] .- 1)
+            x[:, element] .+= weight .* VX[vertices[i]]
+            y[:, element] .+= weight .* VY[vertices[i]]
+            z[:, element] .+= weight .* VZ[vertices[i]]
+        end
+        for i in 1:4, j in (i + 1):4
+            node = edge_nodes[minmax(vertices[i], vertices[j])]
+            weight = 4 .* barycentric[i] .* barycentric[j]
+            x[:, element] .+= weight .* node[1]
+            y[:, element] .+= weight .* node[2]
+            z[:, element] .+= weight .* node[3]
+        end
+    end
+    return x, y, z
 end

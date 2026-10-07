@@ -10,7 +10,7 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Materials: homogeneous, or piecewise constant per element carried as passive state components, with one-sided interface fluxes on the `DGSEM` meshes
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection on tetrahedra and `P4estMesh`, quadrature-projected sources for `DGSEM`
-- Gambit and Gmsh reader
+- Gambit and Gmsh reader, quadratic Gmsh tetrahedra give curved elements
 - VTK output writer and point probes (tetrahedra and all `DGSEM` meshes)
 - On-the-fly Fourier transform on surfaces (tetrahedra): scattering, extinction and absorption cross sections on the TF/SF surface, transmittance and reflectance on detector planes, with Mie series and Airy formula as references
 - Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`
@@ -25,7 +25,7 @@ Currently they cover
 - a lossy cavity
 - Silver-Mueller absorption,
 - Fresnel half space (tetrahedra and `P4estMesh`)
-- dielectric sphere, and its scattering cross section against Mie theory
+- dielectric sphere, and its scattering cross section against Mie theory on curved tetrahedra
 - dielectric slab transmittance and reflectance against the Airy formula
 - dipole in free space (tetrahedra and `P4estMesh` with adaptive refinement) and in a PML box (tetrahedra and `P4estMesh`)
 - TF/SF injection without scatterer (tetrahedra and `P4estMesh`) and scattering off a PEC sphere

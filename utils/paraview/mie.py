@@ -53,7 +53,12 @@ render_view.OrientationAxesVisibility = 1
 render_view.ResetActiveCameraToNegativeY()
 render_view.ResetCamera(False)
 
-line = PlotOverLine(registrationName="line along z", Input=reader)
+# the line probe misses points in curved cells; sample linear subcells instead
+linear_cells = Tessellate(registrationName="linear subcells", Input=reader)
+linear_cells.MaximumNumberofSubdivisions = 4
+linear_cells.ChordError = 1e-4
+linear_cells.MergePoints = 0
+line = PlotOverLine(registrationName="line along z", Input=linear_cells)
 line.Point1 = [0.0, 0.0, -2.5]
 line.Point2 = [0.0, 0.0, 2.5]
 line.Resolution = 2000

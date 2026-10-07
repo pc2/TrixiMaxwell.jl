@@ -138,6 +138,36 @@ end
     @test_throws ArgumentError read_gmsh(download_mesh("3D_PEC.msh"); size_factor = 2.0)
 end
 
+@timed_testset "read_gmsh quadratic geometry file" begin
+    path = download_mesh("3D_RCS_SGBC_Sphere_Box.geo")
+    linear = read_gmsh(path; size_factor = 2.0)
+    quadratic = read_gmsh(path; size_factor = 2.0, order = 2)
+    @test isempty(linear.edge_nodes)
+    # same elements, with the nodes renumbered
+    corners(imported) = [imported.vertex_coordinates[d][imported.EToV]
+                         for d in 1:3]
+    @test corners(quadratic) == corners(linear)
+    @test occursin("quadratic tetrahedra", repr(quadratic))
+    # Gmsh places the mid-edge nodes of the sphere surface on the sphere
+    sphere_edges = Set(minmax(face[i], face[j]) for face in quadratic.face_sets[4]
+                       for (i, j) in ((1, 2), (2, 3), (1, 3)))
+    @test all(abs(sqrt(sum(abs2, quadratic.edge_nodes[edge])) - 0.5) < 1e-8
+              for edge in sphere_edges)
+    mesh = DGMultiMesh(solver, quadratic)
+    @test mesh.md.mesh_type isa StartUpDG.CurvedMesh
+    @test keys(mesh.boundary_faces) == (:SMA,)
+    md = mesh.md
+    in_sphere = [sum(abs2, TrixiMaxwell.element_centroid(md, element)) < 0.25
+                 for element in Base.OneTo(md.num_elements)]
+    volume = sum(sum(view(md.wJq, :, element))
+                 for element in Base.OneTo(md.num_elements) if in_sphere[element])
+    @test volume≈4 / 3 * pi * 0.5^3 rtol=2e-3
+    @test_throws ArgumentError read_gmsh(path; order = 3)
+    @test_throws ArgumentError read_gmsh(download_mesh("3D_PEC.msh"); order = 2)
+    @test_throws ArgumentError ImportedMesh(linear.vertex_coordinates, linear.EToV;
+                                            edge_nodes = Dict((1, 2) => (0.0, 0.0, 0.0)))
+end
+
 @timed_testset "read_gmsh quadratic tetrahedra" begin
     imported = read_gmsh(download_mesh("3D_Resonant_Sphere.msh"))
     @test TrixiMaxwell.num_elements(imported) == 271

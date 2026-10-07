@@ -337,21 +337,15 @@ end
 end
 @trixi_testset "elixir_maxwell_3d_mie.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_mie.jl"))
-    using LinearAlgebra: norm
-    md = mesh.md
-    # the faceted sphere is smaller than the exact one; compare with the Mie
-    # series of the sphere of equal volume
-    volume = sum(sum(solver.basis.wq) * md.J[1, element]
-                 for element in Base.OneTo(md.num_elements)
-                 if norm(TrixiMaxwell.element_centroid(md, element)) < sphere_radius)
-    radius = cbrt(3 * volume / (4 * pi))
-    @test 0.9 < volume / (4 / 3 * pi * sphere_radius^3) < 1
+    @test mesh.md.mesh_type isa StartUpDG.CurvedMesh
     for (k, f) in enumerate(sigma.frequencies)
         f < 0.3 && continue
-        mie = mie_efficiencies(sqrt(sphere_material.epsilon), 2 * pi * f * radius)
-        @test sigma.scattering[k]≈mie.scattering * pi * radius^2 rtol=0.02
+        mie = mie_efficiencies(sqrt(sphere_material.epsilon),
+                               2 * pi * f * sphere_radius)
+        @test sigma.scattering[k]≈mie.scattering * pi * sphere_radius^2 rtol=0.02
         @test abs(sigma.absorption[k]) < 0.03 * sigma.scattering[k]
     end
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
 end
 @trixi_testset "elixir_maxwell_3d_slab.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_slab.jl"))

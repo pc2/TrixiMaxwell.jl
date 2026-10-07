@@ -29,9 +29,11 @@ solver = DGMulti(polydeg = polydeg,
                  volume_integral = VolumeIntegralWeakForm())
 
 # sphere r = 0.5 inside a TFSF box of half-side 0.9 and an absorbing sphere r = 2.5
+# mesh_order = 2 curves the elements onto the sphere, 1 keeps them straight-sided
 size_factor = 2.0
+mesh_order = 2
 mesh_file = download_mesh("3D_RCS_SGBC_Sphere_Box.geo")
-imported_mesh = read_gmsh(mesh_file; size_factor)
+imported_mesh = read_gmsh(mesh_file; size_factor, order = mesh_order)
 mesh = DGMultiMesh(solver, imported_mesh)
 
 is_total_field(x) = all(abs.(x) .< 0.9)
