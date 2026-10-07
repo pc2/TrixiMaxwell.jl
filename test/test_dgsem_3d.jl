@@ -155,6 +155,26 @@ end
     @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
 end
 
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_dipole.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_dipole.jl"))
+    using TrixiMaxwell: electric_field, magnetic_field
+    using LinearAlgebra: norm
+    probes = [SVector(0.5, 0.0, 0.0), SVector(0.0, 0.5, 0.0), SVector(0.0, 0.0, 0.5),
+        SVector(0.35, 0.35, 0.0), SVector(0.3, 0.2, 0.4), SVector(-0.4, 0.1, -0.5)]
+    evaluator = PointEvaluator(probes, semi)
+    numerical = evaluator(sol.u[end], semi)
+    exact = [dipole_field(x, sol.t[end], equations) for x in probes]
+    @test norm(reduce(vcat, numerical) - reduce(vcat, exact)) <
+          0.01 * norm(reduce(vcat, exact))
+    # on the dipole axis the far field vanishes
+    @test norm(magnetic_field(numerical[3])) < 0.01 * norm(magnetic_field(numerical[1]))
+    @test norm(electric_field(numerical[3])) < 0.5 * norm(electric_field(numerical[1]))
+    # refined once where the pulse is and twice around the source
+    @test 512 < Trixi.nelements(solver, semi.cache) < 4096 + 512
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
 @trixi_testset "cavity convergence on all mesh types" begin
     using Trixi, TrixiMaxwell
     # Ez, Hx, Hy carry the mode; Ex, Ey, Hz are zero in the exact solution

@@ -725,6 +725,110 @@ end
     @test_throws ArgumentError TotalFieldScatteredField(wave, mesh, x -> true)
     @test occursin("48 interface faces", repr(tfsf))
 end
+
+@timed_testset "PointEvaluator and ProjectedSourceTerms on DGSEM meshes" begin
+    using LinearAlgebra: norm
+    polydeg = 3
+    solver = DGSEM(polydeg = polydeg, surface_flux = flux_upwind)
+    polynomial(x, t, equations) = SVector(x[1], x[2], x[3], x[1] * x[2], x[3]^3, 1.0)
+    points = [
+        SVector(0.3, -0.7, 0.123),
+        SVector(-0.99, 0.5, 0.5),
+        SVector(0.0, 0.0, 0.0)
+    ]
+    pec = boundary_condition_perfect_electric_conductor
+    meshes = (P4estMesh((2, 2, 2), polydeg = polydeg,
+                        coordinates_min = (-1.0, -1.0, -1.0),
+                        coordinates_max = (1.0, 1.0, 1.0), initial_refinement_level = 1,
+                        periodicity = false),
+              TreeMesh((-1.0, -1.0, -1.0), (1.0, 1.0, 1.0),
+                       initial_refinement_level = 2,
+                       periodicity = false))
+    for mesh in meshes
+        boundary_conditions = mesh isa TreeMesh ? pec :
+                              (; x_neg = pec, x_pos = pec, y_neg = pec, y_pos = pec,
+                               z_neg = pec, z_pos = pec)
+        semi = SemidiscretizationHyperbolic(mesh, MaxwellEquations3D(), polynomial,
+                                            solver;
+                                            boundary_conditions)
+        ode = semidiscretize(semi, (0.0, 1.0))
+        values = PointEvaluator(points, semi)(ode.u0, semi)
+        @test all(values[i] ≈ polynomial(points[i], 0.0, nothing)
+                  for i in eachindex(points))
+        @test_throws ArgumentError PointEvaluator([SVector(1.5, 0.0, 0.0)], semi)
+    end
+
+    # curved elements: the interpolant is no longer exact, the location still is
+    warp(xi, eta, zeta) = SVector(xi, eta, zeta) .+
+                          0.05 * sinpi(xi) * sinpi(eta) * sinpi(zeta)
+    mesh = StructuredMesh((4, 4, 4), warp, periodicity = false)
+    semi = SemidiscretizationHyperbolic(mesh, MaxwellEquations3D(), polynomial, solver;
+                                        boundary_conditions = pec)
+    ode = semidiscretize(semi, (0.0, 1.0))
+    values = PointEvaluator(points, semi)(ode.u0, semi)
+    @test all(isapprox(values[i], polynomial(points[i], 0.0, nothing); rtol = 1.0e-3)
+              for i in eachindex(points))
+
+    # sources of degree below polydeg are integrated exactly by the Lobatto rule,
+    # so projection and collocation agree to rounding
+    equations = MaxwellEquations3D()
+    mesh = first(meshes)
+    boundary_conditions = (; x_neg = pec, x_pos = pec, y_neg = pec, y_pos = pec,
+                           z_neg = pec, z_pos = pec)
+    smooth(u, x, t, equations) = SVector(x[1] * x[2], x[3]^2, 1.0, x[1], 0.0,
+                                         x[2] + x[3])
+    projected = ProjectedSourceTerms(smooth, equations, solver)
+    @test occursin("quadrature points", repr(projected))
+    semi_projected = SemidiscretizationHyperbolic(mesh, equations,
+                                                  initial_condition_zero,
+                                                  solver; boundary_conditions,
+                                                  source_terms = projected)
+    semi_pointwise = SemidiscretizationHyperbolic(mesh, equations,
+                                                  initial_condition_zero,
+                                                  solver; boundary_conditions,
+                                                  source_terms = smooth)
+    u0 = semidiscretize(semi_projected, (0.0, 1.0)).u0
+    du_projected = similar(u0)
+    du_pointwise = similar(u0)
+    Trixi.rhs_hyperbolic!(du_projected, u0, semi_projected, 0.0)
+    Trixi.rhs_hyperbolic!(du_pointwise, u0, semi_pointwise, 0.0)
+    @test du_projected≈du_pointwise atol=1.0e-12
+    @test projected(u0[1:6], points[1], 0.0, equations) ==
+          smooth(u0[1:6], points[1], 0.0, equations)
+
+    # a narrow dipole keeps its total current only when projected
+    dipole = HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.1,
+                            GaussianPulse(0.4; delay = 1.4))
+    t = 1.3
+    expected = -SVector(0.0, 0.0, signal_derivative(dipole.signal, t)) # ∫ J dV / ε
+    fine_mesh = P4estMesh((2, 2, 2), polydeg = polydeg,
+                          coordinates_min = (-1.0, -1.0, -1.0),
+                          coordinates_max = (1.0, 1.0, 1.0),
+                          initial_refinement_level = 2,
+                          periodicity = false)
+    projected_dipole = ProjectedSourceTerms(dipole, equations, solver;
+                                            quadrature_degree = 16)
+    @test projected_dipole.radius == 0.5
+    semi_fine = SemidiscretizationHyperbolic(fine_mesh, equations,
+                                             initial_condition_zero,
+                                             solver; boundary_conditions,
+                                             source_terms = projected_dipole)
+    u0_fine = semidiscretize(semi_fine, (0.0, 1.0)).u0
+    du = similar(u0_fine)
+    Trixi.rhs_hyperbolic!(du, u0_fine, semi_fine, t)
+    current = Trixi.integrate((u, equations) -> u[1:3], du, semi_fine;
+                              normalize = false)
+    @test isapprox(current, expected; atol = 1.0e-4 * norm(expected))
+    semi_fine = SemidiscretizationHyperbolic(fine_mesh, equations,
+                                             initial_condition_zero,
+                                             solver; boundary_conditions,
+                                             source_terms = dipole)
+    Trixi.rhs_hyperbolic!(du, u0_fine, semi_fine, t)
+    current = Trixi.integrate((u, equations) -> u[1:3], du, semi_fine;
+                              normalize = false)
+    @test !isapprox(current, expected; atol = 1.0e-2 * norm(expected))
+end
+
 @timed_testset "Uniaxial PML" begin
     equations = MaxwellEquations3D(UPML(); epsilon = 2.0, mu = 1.5)
     @test equations isa MaxwellEquations3D{Homogeneous, UPML, 12, Float64}

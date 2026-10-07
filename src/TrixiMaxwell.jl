@@ -1,11 +1,11 @@
 module TrixiMaxwell
 
-using StaticArrays: SVector
+using StaticArrays: SVector, SMatrix
 using LinearAlgebra: norm, dot, cross
 
 import Trixi
 
-using Trixi: DGMulti, DGMultiMesh, entropy_timederivative, energy_total
+using Trixi: DGMulti, DGMultiMesh, DGSEM, eachnode, entropy_timederivative, energy_total
 using Trixi: StartUpDG
 using WriteVTK: vtk_grid, vtk_save, MeshCell, VTKCellTypes, VTKCellData
 
@@ -23,6 +23,7 @@ include("sources/incident_fields.jl")
 include("sources/dipole.jl")
 include("sources/tfsf.jl")
 include("sources/pml.jl")
+include("sources/projected.jl")
 include("callbacks_step/save_vtk.jl")
 
 export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
@@ -38,6 +39,6 @@ export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
        GaussianPulse, ModulatedGaussianPulse, signal_derivative,
        signal_second_derivative, PlaneWave, initial_condition_zero,
        HertzianDipole, HertzianDipoleField, TotalFieldScatteredField,
-       PMLProfile, SourceTermsPML, CombinedSourceTerms
+       PMLProfile, SourceTermsPML, CombinedSourceTerms, ProjectedSourceTerms
 
 end

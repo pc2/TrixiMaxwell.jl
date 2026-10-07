@@ -9,9 +9,9 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Maxwell's curl equations for `(E, H)` in normalized units (`c = Z = 1`, relative `epsilon`, `mu`, normalized conductivity `sigma`) 
 - Materials: homogeneous, or piecewise constant per element carried as passive state components
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
-- Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection
+- Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader
-- VTK output writer and point probes
+- VTK output writer and point probes (tetrahedra and all `DGSEM` meshes)
 - Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`
 
 Elixirs can be found in `examples/`, grouped by mesh type.
@@ -25,7 +25,7 @@ Currently they cover
 - Silver-Mueller absorption,
 - Fresnel half space
 - dielectric sphere
-- dipole in free space and in a PML box
+- dipole in free space (tetrahedra and `P4estMesh`) and in a PML box
 - TF/SF injection without scatterer and scattering off a PEC sphere
 
 ## Installation
@@ -91,9 +91,15 @@ Total-field/scattered-field box in free space.
 
 ![TF/SF](docs/figures/tfsf.png)
 
-Hertzian Dipole. Using point probe to compare with exact solution.
+Hertzian dipole on tetrahedra. Point probe compares with the exact solution.
+
+The source is narrower than the elements around it can resolve, which shows in the slice.
 
 ![dipole](docs/figures/dipole.png)
+
+The same dipole with `DGSEM` on `P4estMesh` and adaptive mesh refinement, starting from the same 8 x 8 x 8 cells. The elements around the source are refined twice, the pulse is followed with one refinement level and by `t = 2` fills the box.
+
+![dipole on P4estMesh](docs/figures/dipole_p4est.png)
 
 Comparison of UPML with Silver-Mueller boundary condition.
 
