@@ -24,6 +24,7 @@ include("sources/signals.jl")
 include("sources/incident_fields.jl")
 include("sources/dipole.jl")
 include("sources/tfsf.jl")
+include("sources/tfsf_dgsem.jl")
 include("sources/pml.jl")
 include("sources/projected.jl")
 include("callbacks_step/save_vtk.jl")
@@ -41,6 +42,7 @@ export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
        GaussianPulse, ModulatedGaussianPulse, signal_derivative,
        signal_second_derivative, PlaneWave, initial_condition_zero,
        HertzianDipole, HertzianDipoleField, TotalFieldScatteredField,
+       FluxTotalFieldScatteredField,
        PMLProfile, SourceTermsPML, CombinedSourceTerms, ProjectedSourceTerms
 
 end

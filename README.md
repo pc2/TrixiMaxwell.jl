@@ -26,7 +26,7 @@ Currently they cover
 - Fresnel half space (tetrahedra and `P4estMesh`)
 - dielectric sphere
 - dipole in free space (tetrahedra and `P4estMesh` with adaptive refinement) and in a PML box (tetrahedra and `P4estMesh`)
-- TF/SF injection without scatterer and scattering off a PEC sphere
+- TF/SF injection without scatterer (tetrahedra and `P4estMesh`) and scattering off a PEC sphere
 
 ## Installation
 

@@ -260,6 +260,107 @@ end
     @test all(eocs[:l2][end, [2, 6]] .> 2.75)
 end
 
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_tfsf.jl" begin
+    using Trixi, TrixiMaxwell
+    # the pulse centre is inside the box at t = 1.5
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_tfsf.jl"),
+                        tspan=(0.0, 1.5))
+    mesh_, equations_, solver_, cache_ = Trixi.mesh_equations_solver_cache(semi)
+    @test count(!iszero, surface_flux.signs) == 6 * 16
+    @test occursin("96 interfaces", repr(surface_flux))
+    u = Trixi.wrap_array(sol.u[end], semi)
+    (; weights) = solver_.basis
+    (; inverse_jacobian, node_coordinates) = cache_.elements
+    energy_in = 0.0
+    energy_out = 0.0
+    for element in Trixi.eachelement(solver_, cache_)
+        energy = 0.0
+        for k in eachnode(solver_), j in eachnode(solver_), i in eachnode(solver_)
+            u_node = Trixi.get_node_vars(u, equations_, solver_, i, j, k, element)
+            energy += weights[i] * weights[j] * weights[k] *
+                      energy_total(u_node, equations_) /
+                      inverse_jacobian[i, j, k, element]
+        end
+        if is_total_field(TrixiMaxwell.element_centroid(node_coordinates, element))
+            energy_in += energy
+        else
+            energy_out += energy
+        end
+    end
+    # exact energy of the pulse: cross-section 1 times the integral of exp(-2 (x / w)^2)
+    # hexahedra carry half the degrees of freedom of the tetrahedra at this
+    # cell size, so the leakage is larger than on tets
+    @test energy_in≈0.25 * sqrt(pi / 2) rtol=2e-2
+    @test energy_out < 1e-4 * energy_in
+    peak_energy = Trixi.integrate(energy_total, sol.u[end], semi)
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+
+    # the pulse has left the box through its far face and nothing remains
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_tfsf.jl"))
+    @test Trixi.integrate(energy_total, sol.u[end], semi) < 1e-7 * peak_energy
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_pml_amr.jl" begin
+    using Trixi, TrixiMaxwell
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_pml_amr.jl"),
+                        trees_per_dimension=(4, 4, 4), pml_thickness=0.75,
+                        tspan=(0.0, 2.5))
+    @test Trixi.nmortars(semi.cache.mortars) > 0
+    u = Trixi.wrap_array(sol.u[end], semi)
+    @test any(!iszero, view(u, 7:12, :, :, :, :))
+    @test maximum(abs, view(u, 7:12, :, :, :, :)) < 10
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel_amr.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_fresnel_amr.jl"))
+    @test Trixi.nmortars(semi.cache.mortars) > 0
+    errors = analysis_callback(sol)
+    @test maximum(errors.l2[1:6]) < 5e-2
+    # refinement and coarsening project the material components to rounding
+    u = Trixi.wrap_array(sol.u[end], semi)
+    @test all(x -> isapprox(x, 1.0; atol = 1e-10) || isapprox(x, 4.0; atol = 1e-10),
+              view(u, 7, :, :, :, :))
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_tfsf_amr.jl" begin
+    using Trixi, TrixiMaxwell
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_tfsf_amr.jl"),
+                        tspan=(0.0, 1.5))
+    @test Trixi.nmortars(semi.cache.mortars) > 0
+    # the box faces are refined once on both sides: 6 faces of 4 x 4 elements
+    @test count(!iszero, surface_flux.signs) == 6 * 16 * 4
+    mesh_, equations_, solver_, cache_ = Trixi.mesh_equations_solver_cache(semi)
+    u = Trixi.wrap_array(sol.u[end], semi)
+    (; weights) = solver_.basis
+    (; inverse_jacobian, node_coordinates) = cache_.elements
+    energy_in = 0.0
+    energy_out = 0.0
+    for element in Trixi.eachelement(solver_, cache_)
+        energy = 0.0
+        for k in eachnode(solver_), j in eachnode(solver_), i in eachnode(solver_)
+            u_node = Trixi.get_node_vars(u, equations_, solver_, i, j, k, element)
+            energy += weights[i] * weights[j] * weights[k] *
+                      energy_total(u_node, equations_) /
+                      inverse_jacobian[i, j, k, element]
+        end
+        if is_total_field(TrixiMaxwell.element_centroid(node_coordinates, element))
+            energy_in += energy
+        else
+            energy_out += energy
+        end
+    end
+    @test energy_in≈0.25 * sqrt(pi / 2) rtol=2e-2
+    @test energy_out < 1e-4 * energy_in
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
 @trixi_testset "cavity convergence on all mesh types" begin
     using Trixi, TrixiMaxwell
     # Ez, Hx, Hy carry the mode; Ex, Ey, Hz are zero in the exact solution
