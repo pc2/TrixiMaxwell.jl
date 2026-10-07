@@ -249,6 +249,37 @@ end
     @test abs(energy_rate) < 1e-12 * energy
 end
 
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl (mortars across the jump)" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_fresnel.jl"),
+                        refine_interface=true,
+                        surface_flux=FluxUpwindPenalty(0.0),
+                        boundary_conditions=(;
+                                             x_neg = boundary_condition_perfect_electric_conductor,
+                                             x_pos = boundary_condition_perfect_electric_conductor),
+                        tspan=(0.0, 0.6))
+    @test Trixi.nmortars(semi.cache.mortars) > 0
+    u = sol.u[end]
+    du = similar(u)
+    Trixi.rhs_hyperbolic!(du, u, semi, sol.t[end])
+    mesh, equations, solver, cache = Trixi.mesh_equations_solver_cache(semi)
+    energy_rate = Trixi.analyze(Trixi.entropy_timederivative,
+                                Trixi.wrap_array(du, semi), Trixi.wrap_array(u, semi),
+                                sol.t[end], mesh, equations, solver, cache)
+    energy = Trixi.integrate(energy_total, u, semi, normalize = false)
+    @test abs(energy_rate) < 1e-12 * energy
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl (mortars, upwind)" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_fresnel.jl"),
+                        refine_interface=true)
+    @test Trixi.nmortars(semi.cache.mortars) > 0
+    errors = analysis_callback(sol)
+    @test maximum(errors.l2[1:6]) < 5e-2
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
 @trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl (convergence)" begin
     using Trixi, TrixiMaxwell
     eocs, _ = Trixi.convergence_test(@__MODULE__,

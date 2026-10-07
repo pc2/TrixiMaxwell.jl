@@ -9,7 +9,7 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Maxwell's curl equations for `(E, H)` in normalized units (`c = Z = 1`, relative `epsilon`, `mu`, normalized conductivity `sigma`) 
 - Materials: homogeneous, or piecewise constant per element carried as passive state components, with one-sided interface fluxes on the `DGSEM` meshes
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
-- Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection, quadrature-projected sources for `DGSEM`
+- Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection on tetrahedra and `P4estMesh`, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader
 - VTK output writer and point probes (tetrahedra and all `DGSEM` meshes)
 - Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`

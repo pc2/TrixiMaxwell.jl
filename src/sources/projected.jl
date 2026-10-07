@@ -6,11 +6,15 @@
 Source terms for `DGSEM` that are integrated with a Gauss quadrature of the
 given degree in every element and projected onto the nodal basis, instead of
 being sampled at the Lobatto nodes. This keeps the total strength of sources
-narrower than the node spacing, such as a [`HertzianDipole`](@ref). On other
-solvers the wrapper is transparent.
+narrower than the node spacing, such as a [`HertzianDipole`](@ref). Only the term
+that declares a [`source_support`](@ref) is projected, and only inside that
+support; all other terms of a [`CombinedSourceTerms`](@ref) are sampled at the
+nodes. On other solvers the wrapper is transparent.
 """
-struct ProjectedSourceTerms{Source, RealT <: Real}
+struct ProjectedSourceTerms{Source, Projected, Pointwise, RealT <: Real}
     source_terms::Source
+    projected_terms::Projected
+    pointwise_terms::Pointwise
     interpolation::Matrix{RealT}   # nodes -> quadrature points
     projection::Matrix{RealT}      # quadrature points -> nodes
     center::SVector{3, RealT}
@@ -35,6 +39,16 @@ function source_support(combined::CombinedSourceTerms)
     return isempty(supports) ? nothing : only(supports)
 end
 
+# Split a source into the part to project and the part to sample at the nodes.
+split_projected(source_terms) = (source_terms, nothing)
+function split_projected(combined::CombinedSourceTerms)
+    supported = findall(!isnothing, map(source_support, combined.terms))
+    isempty(supported) && return (combined, nothing)
+    rest = combined.terms[setdiff(eachindex(combined.terms), supported)]
+    return (combined.terms[only(supported)],
+            isempty(rest) ? nothing : CombinedSourceTerms(rest...))
+end
+
 function ProjectedSourceTerms(source_terms, equations, dg::DGSEM;
                               quadrature_degree = 2 * Trixi.polydeg(dg) + 2,
                               support = source_support(source_terms))
@@ -56,7 +70,9 @@ function ProjectedSourceTerms(source_terms, equations, dg::DGSEM;
                        for _ in 1:Threads.nthreads()]
     center = support === nothing ? zero(SVector{3, RealT}) : SVector{3, RealT}(support[1])
     radius = support === nothing ? convert(RealT, Inf) : convert(RealT, support[2])
-    return ProjectedSourceTerms(source_terms, Matrix(interpolation), Matrix(projection),
+    projected_terms, pointwise_terms = split_projected(source_terms)
+    return ProjectedSourceTerms(source_terms, projected_terms, pointwise_terms,
+                                Matrix(interpolation), Matrix(projection),
                                 center, radius, jacobian_threaded,
                                 values_threaded, states_threaded)
 end
@@ -127,8 +143,10 @@ function Trixi.calc_sources!(backend::Nothing, du, u, t, source::ProjectedSource
                 end
             end
             u_q = SVector{Trixi.nvariables(equations)}(view(states, :, q))
-            values[:, q] = jq * source.source_terms(u_q, x, t, equations)
+            values[:, q] = jq * source.projected_terms(u_q, x, t, equations)
         end
+        add_pointwise_terms!(du, u, t, source.pointwise_terms, node_coordinates,
+                             element, equations, dg)
         for n in Base.OneTo(num_nodes)
             i, j, k = Tuple(CartesianIndices((num_nodes_1d(dg), num_nodes_1d(dg),
                                               num_nodes_1d(dg)))[n])
@@ -141,6 +159,19 @@ function Trixi.calc_sources!(backend::Nothing, du, u, t, source::ProjectedSource
                 du[v, i, j, k, element] += scale * value
             end
         end
+    end
+    return nothing
+end
+
+function add_pointwise_terms!(du, u, t, ::Nothing, node_coordinates, element, equations, dg)
+    nothing
+end
+function add_pointwise_terms!(du, u, t, terms, node_coordinates, element, equations, dg)
+    for k in eachnode(dg), j in eachnode(dg), i in eachnode(dg)
+        u_node = Trixi.get_node_vars(u, equations, dg, i, j, k, element)
+        x = Trixi.get_node_coords(node_coordinates, equations, dg, i, j, k, element)
+        Trixi.add_to_node_vars!(du, terms(u_node, x, t, equations), equations, dg, i, j,
+                                k, element)
     end
     return nothing
 end

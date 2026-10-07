@@ -1,6 +1,7 @@
 using OrdinaryDiffEqLowStorageRK
 using Trixi
 using TrixiMaxwell
+using StaticArrays: SVector
 
 ###############################################################################
 # semidiscretization of the Maxwell equations with a dielectric half space
@@ -86,24 +87,6 @@ mesh = P4estMesh(trees_per_dimension, polydeg = polydeg,
                  initial_refinement_level = 0,
                  periodicity = (false, true, true))
 
-# Optionally refine the two tree columns on either side of the interface once,
-# which puts mortars across the material jump.
-refine_interface = false
-function refine_fn(p8est, which_tree, quadrant)
-    tree_x = which_tree % trees_per_dimension[1]
-    if (tree_x == 3 || tree_x == 4) && unsafe_load(quadrant).level < 1
-        return Cint(1)
-    else
-        return Cint(0)
-    end
-end
-if refine_interface
-    refine_fn_c = @cfunction(refine_fn, Cint,
-                             (Ptr{Trixi.p8est_t}, Trixi.p4est_topidx_t,
-                              Ptr{Trixi.p8est_quadrant_t}))
-    Trixi.refine_p4est!(mesh.p4est, true, refine_fn_c, C_NULL)
-end
-
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
                                     boundary_conditions)
 
@@ -123,8 +106,32 @@ alive_callback = AliveCallback(analysis_interval = analysis_interval)
 cfl = 0.5
 stepsize_callback = StepsizeCallback(cfl = cfl)
 
+# Adaptive mesh refinement follows the pulse; the smoothness indicator is
+# amplitude blind, so it is gated by the energy density. The mesh is not adapted
+# before the run, so the materials set per element are kept.
+struct IndicatorGated{Wave, Energy, RealT}
+    wave::Wave
+    energy::Energy
+    energy_floor::RealT
+end
+
+function (indicator::IndicatorGated)(u, mesh, equations, dg, cache; kwargs...)
+    alpha_wave = indicator.wave(u, mesh, equations, dg, cache; kwargs...)
+    alpha_energy = indicator.energy(u, mesh, equations, dg, cache; kwargs...)
+    return alpha_wave .* (alpha_energy .> indicator.energy_floor)
+end
+
+amr_indicator = IndicatorGated(IndicatorLöhner(semi, variable = energy_total),
+                               IndicatorMax(semi, variable = energy_total), 1.0e-5)
+amr_controller = ControllerThreeLevel(semi, amr_indicator;
+                                      base_level = 0, med_level = 1, med_threshold = 0.2,
+                                      max_level = 2, max_threshold = 0.5)
+amr_interval = 20
+amr_callback = AMRCallback(semi, amr_controller, interval = amr_interval,
+                           adapt_initial_condition = false)
+
 callbacks = CallbackSet(summary_callback, analysis_callback, alive_callback,
-                        stepsize_callback)
+                        amr_callback, stepsize_callback)
 
 ###############################################################################
 # run the simulation

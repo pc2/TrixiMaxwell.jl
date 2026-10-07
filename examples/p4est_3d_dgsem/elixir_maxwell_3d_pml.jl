@@ -7,7 +7,8 @@ using TrixiMaxwell
 
 equations = MaxwellEquations3D(UPML())
 
-dipole = HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.1,
+# twice the width of the tetrahedral case, which the hexahedra resolve
+dipole = HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.2,
                         GaussianPulse(0.4; delay = 1.4))
 dipole_field = HertzianDipoleField(dipole, equations)
 

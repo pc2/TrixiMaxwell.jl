@@ -64,3 +64,27 @@ function Trixi.calc_interface_flux!(backend::Nothing, surface_flux_values,
     end
     return nothing
 end
+
+# Mortars: the large element receives the negated secondary flux, so its own
+# flux through its outward normal is stored with a flipped sign.
+Base.@propagate_inbounds function Trixi.calc_mortar_flux!(fstar_primary, fstar_secondary,
+                                                          mesh::Union{Trixi.P4estMesh{3},
+                                                                      Trixi.T8codeMesh{3}},
+                                                          have_nonconservative_terms::Trixi.False,
+                                                          equations::MaxwellEquations3D{Heterogeneous},
+                                                          surface_integral, dg::Trixi.DG,
+                                                          cache, mortar_index,
+                                                          position_index, normal_direction,
+                                                          i_node_index, j_node_index)
+    (; u) = cache.mortars
+    (; surface_flux) = surface_integral
+    u_ll, u_rr = Trixi.get_surface_node_vars(u, equations, dg, position_index,
+                                             i_node_index, j_node_index, mortar_index)
+    flux_small = surface_flux(u_ll, u_rr, normal_direction, equations)
+    flux_large = surface_flux(u_rr, u_ll, -normal_direction, equations)
+    Trixi.set_node_vars!(fstar_primary, flux_small, equations, dg, i_node_index,
+                         j_node_index, position_index)
+    Trixi.set_node_vars!(fstar_secondary, -flux_large, equations, dg, i_node_index,
+                         j_node_index, position_index)
+    return nothing
+end
