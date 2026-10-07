@@ -12,6 +12,7 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection on tetrahedra and `P4estMesh`, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader
 - VTK output writer and point probes (tetrahedra and all `DGSEM` meshes)
+- On-the-fly Fourier transform on surfaces (tetrahedra): scattering, extinction and absorption cross sections on the TF/SF surface, transmittance and reflectance on detector planes, with Mie series and Airy formula as references
 - Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`
 
 Elixirs can be found in `examples/`, grouped by mesh type.
@@ -24,7 +25,8 @@ Currently they cover
 - a lossy cavity
 - Silver-Mueller absorption,
 - Fresnel half space (tetrahedra and `P4estMesh`)
-- dielectric sphere
+- dielectric sphere, and its scattering cross section against Mie theory
+- dielectric slab transmittance and reflectance against the Airy formula
 - dipole in free space (tetrahedra and `P4estMesh` with adaptive refinement) and in a PML box (tetrahedra and `P4estMesh`)
 - TF/SF injection without scatterer (tetrahedra and `P4estMesh`) and scattering off a PEC sphere
 
@@ -58,6 +60,9 @@ Keyword arguments of `trixi_include` override the variables of the elixir, for e
 Elixirs on imported meshes download their mesh on first use.
 
 To write a VTK series for ParaView, add a `SaveVtkCallback(dt = 0.1, output_directory = "out", filename = "solution")` to the callbacks and open the resulting `.pvd` file.
+
+The slab and Mie elixirs write such a series to `out/`.
+From the package root, `paraview --script=utils/paraview/slab.py` and `paraview --script=utils/paraview/mie.py` can be used.
 
 ## Tests
 

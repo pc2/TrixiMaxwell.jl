@@ -335,6 +335,38 @@ end
           Trixi.integrate(energy_total, sol.u[1], semi)
     @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
 end
+@trixi_testset "elixir_maxwell_3d_mie.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_mie.jl"))
+    using LinearAlgebra: norm
+    md = mesh.md
+    # the faceted sphere is smaller than the exact one; compare with the Mie
+    # series of the sphere of equal volume
+    volume = sum(sum(solver.basis.wq) * md.J[1, element]
+                 for element in Base.OneTo(md.num_elements)
+                 if norm(TrixiMaxwell.element_centroid(md, element)) < sphere_radius)
+    radius = cbrt(3 * volume / (4 * pi))
+    @test 0.9 < volume / (4 / 3 * pi * sphere_radius^3) < 1
+    for (k, f) in enumerate(sigma.frequencies)
+        f < 0.3 && continue
+        mie = mie_efficiencies(sqrt(sphere_material.epsilon), 2 * pi * f * radius)
+        @test sigma.scattering[k]≈mie.scattering * pi * radius^2 rtol=0.02
+        @test abs(sigma.absorption[k]) < 0.03 * sigma.scattering[k]
+    end
+end
+@trixi_testset "elixir_maxwell_3d_slab.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_slab.jl"))
+    for (k, f) in enumerate(frequencies)
+        airy = slab_transmittance_reflectance(sqrt(slab_material.epsilon),
+                                              slab_thickness,
+                                              f)
+        @test transmittance[k]≈airy.transmittance atol=5e-3
+        @test reflectance[k]≈airy.reflectance atol=1e-3
+    end
+    @test_throws ArgumentError DetectorPlaneCallback(semi, incident_field, frequencies;
+                                                     point = (0.0, 0.0, -0.53),
+                                                     normal = (0.0, 0.0, 1.0))
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
 @trixi_testset "elixir_maxwell_3d_dipole.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_dipole.jl"))
     using TrixiMaxwell: electric_field, magnetic_field
@@ -382,6 +414,25 @@ end
     @test Trixi.integrate(energy_total, sol.u[end], semi) < 1e-9 * peak_energy
 end
 
+@trixi_testset "elixir_maxwell_3d_tfsf.jl with CrossSectionCallback" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_tfsf.jl"),
+                        callbacks=CallbackSet(summary_callback,
+                                              CrossSectionCallback(semi, tfsf,
+                                                                   [0.5, 1.0, 1.5]),
+                                              stepsize_callback))
+    cross_section_callback = callbacks.discrete_callbacks[2]
+    sigma = cross_sections(cross_section_callback)
+    @test sigma.frequencies == [0.5, 1.0, 1.5]
+    # without a scatterer nothing is scattered or absorbed by the unit box face
+    @test all(abs.(sigma.scattering) .< 1e-4)
+    @test all(abs.(sigma.extinction) .< 5e-3)
+    # transform of the Gaussian signal: w sqrt(pi) exp(-(pi f w)^2)
+    incident = cross_section_callback.affect!.incident
+    for (k, f) in enumerate(sigma.frequencies)
+        spectrum = 0.25 * sqrt(pi) * exp(-(pi * f * 0.25)^2)
+        @test sqrt(sum(abs2, view(incident, 1:3, 1, k)))≈spectrum rtol=1e-3
+    end
+end
 @trixi_testset "elixir_maxwell_3d_pec_sphere.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_pec_sphere.jl"),
                         tspan=(0.0, 0.5))

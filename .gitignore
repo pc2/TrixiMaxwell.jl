@@ -1,4 +1,5 @@
 Manifest.toml
 *.mp4
 *.out
+/out/
 /meshes/

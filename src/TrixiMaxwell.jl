@@ -28,6 +28,9 @@ include("sources/tfsf_dgsem.jl")
 include("sources/pml.jl")
 include("sources/projected.jl")
 include("callbacks_step/save_vtk.jl")
+include("callbacks_step/surface_transforms.jl")
+include("analytic/mie.jl")
+include("analytic/slab.jl")
 
 export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
        FluxUpwindPenalty, flux_upwind,
@@ -43,6 +46,8 @@ export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
        signal_second_derivative, PlaneWave, initial_condition_zero,
        HertzianDipole, HertzianDipoleField, TotalFieldScatteredField,
        FluxTotalFieldScatteredField,
-       PMLProfile, SourceTermsPML, CombinedSourceTerms, ProjectedSourceTerms
+       PMLProfile, SourceTermsPML, CombinedSourceTerms, ProjectedSourceTerms,
+       CrossSectionCallback, DetectorPlaneCallback, cross_sections,
+       transmittance_reflectance, mie_efficiencies, slab_transmittance_reflectance
 
 end

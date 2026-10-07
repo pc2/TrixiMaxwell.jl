@@ -55,7 +55,7 @@ end
     write_solution_vtk(u_ode, semi, filename; solution_variables = cons2cons)
 
 Write the solution `u_ode` of the DGMulti semidiscretization `semi` as
-high-order Lagrange tetrahedra to `filename.vtu`, one point field per variable
+Lagrange tetrahedra of the solution degree to `filename.vtu`, one point field per variable
 of `solution_variables`. Returns the written file names.
 """
 function write_solution_vtk(u_ode, semi, filename::AbstractString;
@@ -65,7 +65,17 @@ function write_solution_vtk(u_ode, semi, filename::AbstractString;
     converted = map(u_node -> solution_variables(u_node, equations), u)
     names = collect(String, Trixi.varnames(solution_variables, equations))
     data = [Trixi.get_component(converted, v) for v in eachindex(names)]
-    return StartUpDG.export_to_vtk(solver.basis, mesh.md, data, names, filename)
+    return StartUpDG.export_to_vtk(plotting_basis(solver.basis), mesh.md, data, names,
+                                   filename)
+end
+
+# Lagrange cells of the solution degree represent the solution exactly; the
+# StartUpDG default plots at degree 10.
+function plotting_basis(rd)
+    rd.Nplot == rd.N && return rd
+    rd_plot = StartUpDG.RefElemData(rd.element_type, rd.N; Nplot = rd.N)
+    all(map((a, b) -> a ≈ b, rd_plot.rst, rd.rst)) || return rd
+    return rd_plot
 end
 
 """

@@ -987,6 +987,36 @@ end
     @test combined(u, x, 0.0, lossy) ≈
           source(u, x, 0.0, lossy) + source_terms_conductivity(u, x, 0.0, lossy)
 end
+
+@timed_testset "Mie series" begin
+    # Bohren and Huffman, appendix A: m = 1.55, wavelength 0.6328, radius 0.525
+    q = mie_efficiencies(1.55, 2 * pi * 0.525 / 0.6328)
+    @test q.scattering≈3.10543 rtol=1e-5
+    @test q.extinction ≈ q.scattering
+    @test abs(q.absorption) < 1e-12
+    # Rayleigh limit
+    x = 0.01
+    @test mie_efficiencies(1.5,
+                           x).scattering≈8 / 3 * x^4 * ((1.5^2 - 1) / (1.5^2 + 2))^2 rtol=1e-4
+    absorbing = mie_efficiencies(1.5 + 0.1im, 1.0)
+    @test absorbing.absorption > 0
+    @test absorbing.extinction ≈ absorbing.scattering + absorbing.absorption
+end
+
+@timed_testset "Slab transmittance" begin
+    n, d = 1.5, 0.5
+    R1 = ((n - 1) / (n + 1))^2
+    for f in (0.3, 0.5, 1.0)
+        slab = slab_transmittance_reflectance(n, d, f)
+        @test slab.transmittance + slab.reflectance ≈ 1
+        @test slab.transmittance ≈
+              1 / (1 + 4 * R1 / (1 - R1)^2 * sin(2 * pi * f * n * d)^2)
+    end
+    # half-wave slab
+    @test slab_transmittance_reflectance(n, d, 1 / (2 * n * d)).transmittance ≈ 1
+    absorbing = slab_transmittance_reflectance(n + 0.1im, d, 1.0)
+    @test absorbing.transmittance + absorbing.reflectance < 1
+end
 end
 
 end # module
