@@ -3,58 +3,53 @@ using Trixi
 using TrixiMaxwell
 
 ###############################################################################
-# semidiscretization of the Maxwell equations
+# semidiscretization of the Maxwell equations with a uniaxial PML
 
-equations = MaxwellEquations3D()
+equations = MaxwellEquations3D(UPML())
 
-initial_condition = initial_condition_cavity
+dipole = HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.1,
+                        GaussianPulse(0.4; delay = 1.4))
+dipole_field = HertzianDipoleField(dipole, equations)
 
-boundary_condition = boundary_condition_perfect_electric_conductor
+coordinates_min = (-1.5, -1.5, -1.5)
+coordinates_max = (1.5, 1.5, 1.5)
+pml_thickness = 0.5
+pml_profile = PMLProfile(coordinates_min, coordinates_max, pml_thickness)
+
+initial_condition = initial_condition_zero
+
+boundary_condition = boundary_condition_silver_mueller
 boundary_conditions = (; x_neg = boundary_condition, x_pos = boundary_condition,
                        y_neg = boundary_condition, y_pos = boundary_condition,
                        z_neg = boundary_condition, z_pos = boundary_condition)
 
-polydeg = 3
-solver = DGSEM(polydeg = polydeg, surface_flux = flux_upwind)
+polydeg = 2
+surface_flux = flux_upwind
+solver = DGSEM(polydeg = polydeg, surface_flux = surface_flux)
 
-trees_per_dimension = (2, 2, 2)
-coordinates_min = (-1.0, -1.0, -1.0)
-coordinates_max = (1.0, 1.0, 1.0)
-initial_refinement_level = 1
+source_terms = ProjectedSourceTerms(CombinedSourceTerms(SourceTermsPML(pml_profile),
+                                                        dipole), equations, solver)
+
+trees_per_dimension = (6, 6, 6)
 mesh = P4estMesh(trees_per_dimension, polydeg = polydeg,
                  coordinates_min = coordinates_min, coordinates_max = coordinates_max,
-                 initial_refinement_level = initial_refinement_level,
+                 initial_refinement_level = 1,
                  periodicity = false)
 
-# Refine the lower corner octant of each tree once more, which puts mortars on
-# the interfaces between refinement levels.
-function refine_fn(p8est, which_tree, quadrant)
-    quadrant_obj = unsafe_load(quadrant)
-    if quadrant_obj.x == 0 && quadrant_obj.y == 0 && quadrant_obj.z == 0 &&
-       quadrant_obj.level <= initial_refinement_level
-        return Cint(1)
-    else
-        return Cint(0)
-    end
-end
-refine_fn_c = @cfunction(refine_fn, Cint,
-                         (Ptr{Trixi.p8est_t}, Ptr{Trixi.p4est_topidx_t},
-                          Ptr{Trixi.p8est_quadrant_t}))
-Trixi.refine_p4est!(mesh.p4est, true, refine_fn_c, C_NULL)
-
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver;
-                                    boundary_conditions)
+                                    boundary_conditions, source_terms)
 
 ###############################################################################
 # ODE solvers, callbacks etc.
 
-tspan = (0.0, 1.0)
+tspan = (0.0, 4.0)
 ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
 
 analysis_interval = 100
-analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
+analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
+                                     analysis_errors = Symbol[])
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
 cfl = 0.5
@@ -67,5 +62,5 @@ callbacks = CallbackSet(summary_callback, analysis_callback, alive_callback,
 # run the simulation
 
 sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
-            dt = 1.0, # overwritten by stepsize callback
+            dt = 1.0, # overwritten by the stepsize callback
             ode_default_options()..., callback = callbacks)

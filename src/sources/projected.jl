@@ -17,6 +17,7 @@ struct ProjectedSourceTerms{Source, RealT <: Real}
     radius::RealT
     jacobian_threaded::Vector{Vector{RealT}}
     values_threaded::Vector{Matrix{RealT}}
+    states_threaded::Vector{Matrix{RealT}}
 end
 
 """
@@ -27,6 +28,12 @@ sampled at the nodes, or `nothing` to project everywhere.
 """
 source_support(source_terms) = nothing
 source_support(dipole::HertzianDipole) = (dipole.position, 5 * dipole.width)
+function source_support(combined::CombinedSourceTerms)
+    supports = filter(!isnothing, map(source_support, combined.terms))
+    length(supports) <= 1 ||
+        throw(ArgumentError("more than one term of the combined sources declares a support"))
+    return isempty(supports) ? nothing : only(supports)
+end
 
 function ProjectedSourceTerms(source_terms, equations, dg::DGSEM;
                               quadrature_degree = 2 * Trixi.polydeg(dg) + 2,
@@ -45,11 +52,13 @@ function ProjectedSourceTerms(source_terms, equations, dg::DGSEM;
     jacobian_threaded = [zeros(RealT, num_points) for _ in 1:Threads.nthreads()]
     values_threaded = [zeros(RealT, Trixi.nvariables(equations), num_points)
                        for _ in 1:Threads.nthreads()]
+    states_threaded = [zeros(RealT, Trixi.nvariables(equations), num_points)
+                       for _ in 1:Threads.nthreads()]
     center = support === nothing ? zero(SVector{3, RealT}) : SVector{3, RealT}(support[1])
     radius = support === nothing ? convert(RealT, Inf) : convert(RealT, support[2])
     return ProjectedSourceTerms(source_terms, Matrix(interpolation), Matrix(projection),
                                 center, radius, jacobian_threaded,
-                                values_threaded)
+                                values_threaded, states_threaded)
 end
 
 # Distance from the ball around the support center to the node bounding box.
@@ -100,16 +109,25 @@ function Trixi.calc_sources!(backend::Nothing, du, u, t, source::ProjectedSource
             continue
         end
         values = source.values_threaded[Threads.threadid()]
+        states = source.states_threaded[Threads.threadid()]
         for q in Base.OneTo(num_points)
             x = zero(SVector{3, eltype(jacobian)})
             jq = zero(eltype(jacobian))
-            for n in Base.OneTo(num_nodes)
+            for v in axes(states, 1)
+                states[v, q] = 0
+            end
+            n = 0
+            for k in eachnode(dg), j in eachnode(dg), i in eachnode(dg)
+                n += 1
                 weight = interpolation[q, n]
                 x += weight * SVector{3}(view(element_coordinates, :, n))
                 jq += weight * element_jacobian(inverse_jacobian, n, element)
+                for v in axes(states, 1)
+                    states[v, q] += weight * u[v, i, j, k, element]
+                end
             end
-            u_center = Trixi.get_node_vars(u, equations, dg, 1, 1, 1, element)
-            values[:, q] = jq * source.source_terms(u_center, x, t, equations)
+            u_q = SVector{Trixi.nvariables(equations)}(view(states, :, q))
+            values[:, q] = jq * source.source_terms(u_q, x, t, equations)
         end
         for n in Base.OneTo(num_nodes)
             i, j, k = Tuple(CartesianIndices((num_nodes_1d(dg), num_nodes_1d(dg),

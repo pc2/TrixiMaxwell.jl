@@ -51,8 +51,7 @@ summary_callback = SummaryCallback()
 
 analysis_interval = 100
 analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
-                                     analysis_errors = Symbol[],
-                                     analysis_integrals = (energy_total,))
+                                     analysis_errors = Symbol[])
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
 cfl = 0.5

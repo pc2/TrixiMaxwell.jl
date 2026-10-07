@@ -7,7 +7,7 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 ## Current features
 
 - Maxwell's curl equations for `(E, H)` in normalized units (`c = Z = 1`, relative `epsilon`, `mu`, normalized conductivity `sigma`) 
-- Materials: homogeneous, or piecewise constant per element carried as passive state components
+- Materials: homogeneous, or piecewise constant per element carried as passive state components, with one-sided interface fluxes on the `DGSEM` meshes
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader
@@ -23,9 +23,9 @@ Currently they cover
 - periodic plane wave
 - a lossy cavity
 - Silver-Mueller absorption,
-- Fresnel half space
+- Fresnel half space (tetrahedra and `P4estMesh`)
 - dielectric sphere
-- dipole in free space (tetrahedra and `P4estMesh`) and in a PML box
+- dipole in free space (tetrahedra and `P4estMesh` with adaptive refinement) and in a PML box (tetrahedra and `P4estMesh`)
 - TF/SF injection without scatterer and scattering off a PEC sphere
 
 ## Installation

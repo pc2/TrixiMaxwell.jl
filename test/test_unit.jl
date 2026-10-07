@@ -829,6 +829,95 @@ end
     @test !isapprox(current, expected; atol = 1.0e-2 * norm(expected))
 end
 
+@timed_testset "Divergence diagnostics on DGSEM meshes" begin
+    polydeg = 3
+    solver = DGSEM(polydeg = polydeg, surface_flux = flux_upwind)
+    equations = MaxwellEquations3D()
+    # div E = 3, div H = 2x
+    fields(x, t, equations) = SVector(x[1], x[2], x[3], x[1]^2, 0.0, 0.0)
+    pec = boundary_condition_perfect_electric_conductor
+    sides = (; x_neg = pec, x_pos = pec, y_neg = pec, y_pos = pec, z_neg = pec,
+             z_pos = pec)
+    warp(xi, eta, zeta) = SVector(xi, eta, zeta) .+
+                          0.05 * sinpi(xi) * sinpi(eta) * sinpi(zeta)
+    cases = ((P4estMesh((2, 2, 2), polydeg = polydeg,
+                        coordinates_min = (-1.0, -1.0, -1.0),
+                        coordinates_max = (1.0, 1.0, 1.0), initial_refinement_level = 1,
+                        periodicity = false), sides),
+             (TreeMesh((-1.0, -1.0, -1.0), (1.0, 1.0, 1.0),
+                       initial_refinement_level = 2,
+                       periodicity = false), pec),
+             (StructuredMesh((4, 4, 4), warp, periodicity = false), pec))
+    for (mesh, boundary_conditions) in cases
+        semi = SemidiscretizationHyperbolic(mesh, equations, fields, solver;
+                                            boundary_conditions)
+        u0 = semidiscretize(semi, (0.0, 1.0)).u0
+        u = Trixi.wrap_array(u0, semi)
+        _, _, _, cache = Trixi.mesh_equations_solver_cache(semi)
+        function analyze(name)
+            Trixi.analyze(Val(name), nothing, u, 0.0, mesh, equations,
+                          solver, cache)
+        end
+        # the interpolated metric terms of the warped mesh alias the products
+        rtol = mesh isa StructuredMesh ? 5.0e-2 : 1.0e-12
+        @test isapprox(analyze(:l2_dive), 3 * sqrt(8.0); rtol)
+        @test isapprox(analyze(:linf_dive), 3.0; rtol)
+        @test isapprox(analyze(:l2_divh), sqrt(4 * 2 / 3 * 4); rtol)
+        @test isapprox(analyze(:linf_divh), 2.0; rtol)
+    end
+end
+
+@timed_testset "Heterogeneous interface fluxes on DGSEM meshes" begin
+    using LinearAlgebra: norm
+    polydeg = 3
+    solver = DGSEM(polydeg = polydeg, surface_flux = flux_upwind)
+    equations = MaxwellEquations3D(Heterogeneous())
+    # smooth fields with a material jump at x = 0 on element faces
+    fields(x, t, equations) = SVector(sinpi(x[2]) * cospi(x[3]), cospi(x[1]),
+                                      sinpi(x[1] + x[3]),
+                                      cospi(x[2]), sinpi(x[3]), cospi(x[1] - x[2]),
+                                      1.0, 1.0, 0.0)
+    material_at(x) = x[1] < 0 ? Material(epsilon = 1.0) : Material(epsilon = 4.0)
+    pec = boundary_condition_perfect_electric_conductor
+    sides = (; x_neg = pec, x_pos = pec, y_neg = pec, y_pos = pec, z_neg = pec,
+             z_pos = pec)
+    lo, hi = (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0)
+    meshes = ((TreeMesh(lo, hi, initial_refinement_level = 2, periodicity = false),
+               pec),
+              (P4estMesh((4, 4, 4), polydeg = polydeg, coordinates_min = lo,
+                         coordinates_max = hi, initial_refinement_level = 0,
+                         periodicity = false), sides),
+              (T8codeMesh((4, 4, 4), polydeg = polydeg, coordinates_min = lo,
+                          coordinates_max = hi, initial_refinement_level = 0,
+                          periodicity = false), sides))
+    points = [SVector(0.1, -0.3, 0.2), SVector(-0.05, 0.4, -0.6),
+        SVector(0.49, 0.01, 0.0),
+        SVector(-0.9, -0.9, 0.9)]
+    results = map(meshes) do (mesh, boundary_conditions)
+        semi = SemidiscretizationHyperbolic(mesh, equations, fields, solver;
+                                            boundary_conditions)
+        ode = semidiscretize(semi, (0.0, 1.0))
+        set_materials!(ode.u0, semi, material_at)
+        du = similar(ode.u0)
+        Trixi.rhs_hyperbolic!(du, ode.u0, semi, 0.0)
+        PointEvaluator(points, semi)(du, semi)
+    end
+    for other in results[2:end]
+        @test all(isapprox(a, b; atol = 1.0e-10 * norm(a))
+                  for (a, b) in zip(results[1], other))
+    end
+    # the material jump changes the flux: without it the right-hand side differs
+    mesh, boundary_conditions = meshes[2]
+    semi = SemidiscretizationHyperbolic(mesh, equations, fields, solver;
+                                        boundary_conditions)
+    ode = semidiscretize(semi, (0.0, 1.0))
+    du = similar(ode.u0)
+    Trixi.rhs_hyperbolic!(du, ode.u0, semi, 0.0)
+    homogeneous = PointEvaluator(points, semi)(du, semi)
+    @test !all(isapprox(a, b; atol = 1.0e-6 * norm(a))
+               for (a, b) in zip(results[2], homogeneous))
+end
+
 @timed_testset "Uniaxial PML" begin
     equations = MaxwellEquations3D(UPML(); epsilon = 2.0, mu = 1.5)
     @test equations isa MaxwellEquations3D{Homogeneous, UPML, 12, Float64}

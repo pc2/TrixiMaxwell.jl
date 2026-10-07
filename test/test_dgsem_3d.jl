@@ -175,6 +175,91 @@ end
     @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
 end
 
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_pml.jl" begin
+    using Trixi, TrixiMaxwell
+    # coarser mesh with a two-cell layer and a source the hexahedra resolve;
+    # after the pulse has passed, the energy left in the box measures the
+    # reflections from the layer
+    remaining_energy(sol, semi) = Trixi.integrate(energy_total, sol.u[end], semi,
+                                                  normalize = false)
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_pml.jl"),
+                        trees_per_dimension=(4, 4, 4), pml_thickness=0.75,
+                        dipole=HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.2,
+                                              GaussianPulse(0.4; delay = 1.4)))
+    @test Trixi.nvariables(equations) == 12
+    energy_pml = remaining_energy(sol, semi)
+    u = Trixi.wrap_array(sol.u[end], semi)
+    node_coordinates = semi.cache.elements.node_coordinates
+    # auxiliary fields vanish in elements that lie entirely in the physical region
+    inside(element) = all(maximum(abs, view(node_coordinates, d, :, :, :, element)) <
+                          0.75
+                          for d in 1:3)
+    @test count(element -> inside(element) &&
+                    any(!iszero, view(u, 7:12, :, :, :, element)),
+                axes(u, 5)) == 0
+    @test any(!iszero, view(u, 7:12, :, :, :, :))
+    @test maximum(abs, view(u, 7:12, :, :, :, :)) < 10
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+
+    # Silver-Mueller alone on the same domain reflects far more
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_pml.jl"),
+                        trees_per_dimension=(4, 4, 4),
+                        dipole=HertzianDipole((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.2,
+                                              GaussianPulse(0.4; delay = 1.4)),
+                        equations=MaxwellEquations3D(),
+                        source_terms=ProjectedSourceTerms(dipole, MaxwellEquations3D(),
+                                                          DGSEM(polydeg = 2,
+                                                                surface_flux = flux_upwind)))
+    energy_silver_mueller = remaining_energy(sol, semi)
+    @test energy_pml < 0.25 * energy_silver_mueller
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_fresnel.jl"))
+    errors = analysis_callback(sol)
+    # half the degrees of freedom of the tetrahedral mesh at the same cell size
+    @test maximum(errors.l2[1:6]) < 5e-2
+    @test all(iszero, errors.l2[7:9]) && all(iszero, errors.linf[7:9])
+    # passive material components stay fixed
+    u = Trixi.wrap_array(sol.u[end], semi)
+    @test all(x -> x in (1.0, 4.0), view(u, 7, :, :, :, :))
+    @test all(==(1.0), view(u, 8, :, :, :, :)) && all(iszero, view(u, 9, :, :, :, :))
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl (interface energy conservation)" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                 "elixir_maxwell_3d_fresnel.jl"),
+                        surface_flux=FluxUpwindPenalty(0.0),
+                        boundary_conditions=(;
+                                             x_neg = boundary_condition_perfect_electric_conductor,
+                                             x_pos = boundary_condition_perfect_electric_conductor),
+                        tspan=(0.0, 0.6))
+    u = sol.u[end]
+    du = similar(u)
+    Trixi.rhs_hyperbolic!(du, u, semi, sol.t[end])
+    mesh, equations, solver, cache = Trixi.mesh_equations_solver_cache(semi)
+    energy_rate = Trixi.analyze(Trixi.entropy_timederivative,
+                                Trixi.wrap_array(du, semi), Trixi.wrap_array(u, semi),
+                                sol.t[end], mesh, equations, solver, cache)
+    energy = Trixi.integrate(energy_total, u, semi, normalize = false)
+    @test abs(energy_rate) < 1e-12 * energy
+end
+
+@trixi_testset "p4est_3d_dgsem/elixir_maxwell_3d_fresnel.jl (convergence)" begin
+    using Trixi, TrixiMaxwell
+    eocs, _ = Trixi.convergence_test(@__MODULE__,
+                                     joinpath(EXAMPLES_DIR, "p4est_3d_dgsem",
+                                              "elixir_maxwell_3d_fresnel.jl"),
+                                     3; polydeg = 2, cfl = 0.3,
+                                     initial_refinement_level = 1)
+    # Ey and Hz carry the pulse, the other components vanish exactly on hexahedra
+    @test all(eocs[:l2][end, [2, 6]] .> 2.75)
+end
+
 @trixi_testset "cavity convergence on all mesh types" begin
     using Trixi, TrixiMaxwell
     # Ez, Hx, Hy carry the mode; Ex, Ey, Hz are zero in the exact solution

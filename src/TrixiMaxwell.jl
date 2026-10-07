@@ -12,6 +12,8 @@ using WriteVTK: vtk_grid, vtk_save, MeshCell, VTKCellTypes, VTKCellData
 include("equations/maxwell_3d.jl")
 include("equations/materials.jl")
 include("callbacks_step/analysis_dgmulti.jl")
+include("callbacks_step/analysis_dgsem.jl")
+include("solvers/dgsem_heterogeneous.jl")
 include("meshes/imported_mesh.jl")
 include("meshes/gambit.jl")
 include("meshes/gmsh.jl")
