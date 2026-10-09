@@ -11,6 +11,7 @@ using WriteVTK: vtk_grid, vtk_save, MeshCell, VTKCellTypes, VTKCellData
 
 include("equations/maxwell_3d.jl")
 include("equations/materials.jl")
+include("equations/presets.jl")
 include("callbacks_step/analysis_dgmulti.jl")
 include("callbacks_step/analysis_dgsem.jl")
 include("solvers/dgsem_heterogeneous.jl")
@@ -34,7 +35,7 @@ include("analytic/slab.jl")
 
 export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
        NonDispersive, Dispersive, DrudePole, LorentzPole, source_terms_dispersive,
-       relative_permittivity,
+       relative_permittivity, material_gold, normalized_angular_frequency,
        FluxUpwindPenalty, flux_upwind,
        permittivity, permeability, conductivity, impedance, admittance, speed_of_light,
        source_terms_conductivity, Material, set_materials!,

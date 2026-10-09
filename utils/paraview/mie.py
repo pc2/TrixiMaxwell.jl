@@ -54,8 +54,13 @@ render_view.OrientationAxesVisibility = 1
 render_view.ResetActiveCameraToNegativeY()
 render_view.ResetCamera(False)
 
-# the line probe misses points in curved cells; sample linear subcells instead
-linear_cells = Tessellate(registrationName="linear subcells", Input=reader)
+# the line probe misses points in curved cells; sample linear subcells instead,
+# which carry at most 18 arrays
+line_arrays = [name for name in ("Ex", "Hy", "epsilon") if name in reader.PointData.keys()]
+line_fields = PassArrays(registrationName="line fields", Input=reader)
+line_fields.PointDataArrays = line_arrays
+line_fields.CellDataArrays = []
+linear_cells = Tessellate(registrationName="linear subcells", Input=line_fields)
 linear_cells.MaximumNumberofSubdivisions = 4
 linear_cells.ChordError = 1e-4
 linear_cells.MergePoints = 0

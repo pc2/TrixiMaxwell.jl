@@ -1099,6 +1099,21 @@ end
                                                         MaxwellEquations3D(drude = (drude,)))
 end
 
+@timed_testset "Gold preset" begin
+    # one second of a 1 Hz oscillation in units of the vacuum light path per second
+    @test normalized_angular_frequency(1.0, 299_792_458.0) ≈ 2 * pi
+    gold = material_gold(1e-9)
+    @test gold.epsilon == 5.9673
+    @test length(gold.drude) == 1 && length(gold.lorentz) == 1
+    # Johnson and Christy: about -9.4 + 1.5i at 600 nm and -24 + 1.5i at 800 nm;
+    # in nanometers the normalized frequency is 1 / wavelength
+    @test isapprox(relative_permittivity(gold, 1 / 600), -9.4 + 1.5im; rtol = 0.05)
+    @test isapprox(relative_permittivity(gold, 1 / 800), -24.2 + 1.5im; rtol = 0.05)
+    # the same material in another length unit at the same physical frequency
+    @test relative_permittivity(material_gold(80e-9), 80 / 600) ≈
+          relative_permittivity(gold, 1 / 600)
+end
+
 @timed_testset "Mie series" begin
     # Bohren and Huffman, appendix A: m = 1.55, wavelength 0.6328, radius 0.525
     q = mie_efficiencies(1.55, 2 * pi * 0.525 / 0.6328)

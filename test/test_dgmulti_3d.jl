@@ -394,6 +394,17 @@ end
     # Trixi's backend query allocates for states with more than 16 components
     @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 2000)
 end
+@trixi_testset "elixir_maxwell_3d_gold_nanosphere.jl" begin
+    # the full spectrum needs tspan = (0, 65); check setup and the first steps
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_gold_nanosphere.jl"),
+                        tspan=(0.0, 0.2))
+    @test mesh.md.mesh_type isa StartUpDG.CurvedMesh
+    u = Trixi.wrap_array(sol.u[end], semi)
+    @test count(u_node -> u_node[10] > 0, u) > 0
+    @test all(isfinite, sigma.extinction)
+    # Trixi's backend query allocates for states with more than 16 components
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 2000)
+end
 @trixi_testset "elixir_maxwell_3d_dipole.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_dipole.jl"))
     using TrixiMaxwell: electric_field, magnetic_field
