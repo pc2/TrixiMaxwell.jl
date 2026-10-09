@@ -2,7 +2,7 @@
 
 Discontinuous Galerkin time-domain solver for Maxwell's equations built on [Trixi.jl](https://github.com/trixi-framework/Trixi.jl).
 
-Started at the JuliaCon 2026 hackathon. Work in progress.
+Started at the JuliaCon 2026 hackathon to learn `Trixi.jl`.
 
 ## Current features
 
@@ -12,19 +12,19 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection on tetrahedra and `P4estMesh`, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader, quadratic Gmsh tetrahedra give curved elements
-- VTK output writer and point probes (tetrahedra and all `DGSEM` meshes)
+- VTK output writer with ParaView scripts in `utils/paraview/`, point probes (tetrahedra and all `DGSEM` meshes), divergence diagnostics
 - On-the-fly Fourier transform on surfaces (tetrahedra): scattering, extinction and absorption cross sections on the TF/SF surface, transmittance and reflectance on detector planes, with Mie series and Airy formula as references
 - Solvers: `DGMulti` on tetrahedra, `DGSEM` on `TreeMesh`, `StructuredMesh`, `P4estMesh` and `T8codeMesh`
 
 Elixirs can be found in `examples/`, grouped by mesh type.
 The tetrahedral ones in `examples/dgmulti_3d/` use meshes from [nodal-dg](https://github.com/tcew/nodal-dg), [MIDG2](https://github.com/tcew/MIDG2) and [OpenSEMBA](https://github.com/OpenSEMBA/dgtd).
-All other `Trixi.jl` mesh types are tested only on the cavity example.
+The `DGSEM` mesh types all run the cavity; `P4estMesh` additionally covers the Fresnel, dipole, PML and TF/SF cases, also with adaptive refinement.
 
 Currently they cover
 - PEC cavity
 - periodic plane wave
 - a lossy cavity
-- Silver-Mueller absorption,
+- Silver-Mueller absorption
 - Fresnel half space (tetrahedra and `P4estMesh`)
 - dielectric sphere, and its scattering cross section against Mie theory on curved tetrahedra
 - dielectric slab transmittance and reflectance against the Airy formula, also with Drude and Lorentz poles
