@@ -1,9 +1,10 @@
-# ParaView setup for the output of examples/dgmulti_3d/elixir_maxwell_3d_mie.jl:
-# Ex on the plane y = 0 with the sphere and the TF/SF box outlined, and Ex, Hy
-# and epsilon along the z axis.
+# ParaView setup for the output of examples/dgmulti_3d/elixir_maxwell_3d_mie.jl
+# and elixir_maxwell_3d_mie_drude.jl: Ex on the plane y = 0 with the sphere and
+# the TF/SF box outlined, and Ex, Hy and, for a dielectric sphere, epsilon along
+# the z axis.
 # Run from the package root with
 #   paraview --script=utils/paraview/mie.py
-# or set MIE_PVD to the path of mie.pvd.
+# or set MIE_PVD to the path of mie.pvd or mie_drude.pvd.
 import os
 
 from paraview.simple import *
@@ -69,7 +70,9 @@ AssignViewToLayout(view=chart, layout=layout, hint=2)
 line_display = Show(line, chart)
 line_display.UseIndexForXAxis = 0
 line_display.XArrayName = "Points_Z"
-line_display.SeriesVisibility = ["Ex", "Hy", "epsilon"]
+# epsilon marks a dielectric sphere; a Drude sphere keeps epsilon = 1
+dispersive = "omega_p_d1" in reader.PointData.keys()
+line_display.SeriesVisibility = ["Ex", "Hy"] if dispersive else ["Ex", "Hy", "epsilon"]
 line_display.SeriesColor = ["Ex", "0.8", "0.1", "0.1", "Hy", "0.1", "0.3", "0.8",
                             "epsilon", "0.5", "0.5", "0.5"]
 chart.BottomAxisTitle = "z"

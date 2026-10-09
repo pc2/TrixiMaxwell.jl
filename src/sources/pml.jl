@@ -57,7 +57,7 @@ struct SourceTermsPML{Profile}
 end
 
 @inline function (source::SourceTermsPML)(u, x, t,
-                                          equations::MaxwellEquations3D{<:Any, UPML})
+                                          equations::MaxwellEquations3D{<:Any, <:Any, UPML})
     sigma = source.profile(x)
     E = electric_field(u)
     H = magnetic_field(u)
@@ -77,7 +77,7 @@ end
     dH = -damping .* H - q / mu
     dp = coupling .* (eps * E) - sigma .* p
     dq = coupling .* (mu * H) - sigma .* q
-    return vcat(dE, dH, zero(default_materials(equations)), dp, dq)
+    return vcat(dE, dH, zero_before_pml(equations), dp, dq)
 end
 
 function (::SourceTermsPML)(u, x, t, equations::MaxwellEquations3D)

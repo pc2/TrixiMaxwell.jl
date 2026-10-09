@@ -8,6 +8,7 @@ Started at the JuliaCon 2026 hackathon. Work in progress.
 
 - Maxwell's curl equations for `(E, H)` in normalized units (`c = Z = 1`, relative `epsilon`, `mu`, normalized conductivity `sigma`) 
 - Materials: homogeneous, or piecewise constant per element carried as passive state components, with one-sided interface fluxes on the `DGSEM` meshes
+- Dispersive media: Drude and Lorentz poles through polarization currents, homogeneous or per element
 - Boundaries: perfect electric and magnetic conductors, Silver-Mueller, incident fields, uniaxial perfectly matched layer
 - Sources: Hertzian dipole with analytic reference field, plane waves with Gaussian or modulated signals, total-field/scattered-field injection on tetrahedra and `P4estMesh`, quadrature-projected sources for `DGSEM`
 - Gambit and Gmsh reader, quadratic Gmsh tetrahedra give curved elements
@@ -26,7 +27,8 @@ Currently they cover
 - Silver-Mueller absorption,
 - Fresnel half space (tetrahedra and `P4estMesh`)
 - dielectric sphere, and its scattering cross section against Mie theory on curved tetrahedra
-- dielectric slab transmittance and reflectance against the Airy formula
+- dielectric slab transmittance and reflectance against the Airy formula, also with Drude and Lorentz poles
+- cavity filled with a Drude medium, and a Drude sphere against Mie theory
 - dipole in free space (tetrahedra and `P4estMesh` with adaptive refinement) and in a PML box (tetrahedra and `P4estMesh`)
 - TF/SF injection without scatterer (tetrahedra and `P4estMesh`) and scattering off a PEC sphere
 

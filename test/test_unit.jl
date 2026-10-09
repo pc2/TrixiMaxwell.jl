@@ -19,7 +19,8 @@ end
 @timed_testset "MaxwellEquations3D" begin
     equations = MaxwellEquations3D()
 
-    @test equations isa MaxwellEquations3D{Homogeneous, NoPML, 6, Float64}
+    @test equations isa
+          MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, Float64}
     @test equations isa Trixi.AbstractMaxwellEquations{3, 6}
     @test ndims(equations) == 3
     @test Trixi.nvariables(equations) == 6
@@ -27,7 +28,8 @@ end
     @test equations.mu == 1.0
 
     equations = MaxwellEquations3D(epsilon = 4, mu = 1.0)
-    @test equations isa MaxwellEquations3D{Homogeneous, NoPML, 6, Float64}
+    @test equations isa
+          MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, Float64}
     @test permittivity(equations) == 4.0
     @test permeability(equations) == 1.0
     @test conductivity(equations) == 0.0
@@ -36,7 +38,7 @@ end
     @test speed_of_light(equations) == 0.5
     @test MaxwellEquations3D(epsilon = 4.0, sigma = 0.25).sigma == 0.25
     @test MaxwellEquations3D(epsilon = 4.0f0) isa
-          MaxwellEquations3D{Homogeneous, NoPML, 6, Float32}
+          MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, Float32}
 
     u = SVector(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
     @test permittivity(u, equations) == 4.0
@@ -45,7 +47,8 @@ end
     @test speed_of_light(u, equations) == 0.5
 
     equations32 = similar(equations, Float32)
-    @test equations32 isa MaxwellEquations3D{Homogeneous, NoPML, 6, Float32}
+    @test equations32 isa
+          MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, Float32}
     @test equations32.epsilon == 4.0f0
 
     expected_names = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
@@ -371,14 +374,15 @@ end
 @timed_testset "Heterogeneous materials" begin
     equations = MaxwellEquations3D(Heterogeneous(); epsilon = 4.0, mu = 1.0,
                                    sigma = 0.5)
-    @test equations isa MaxwellEquations3D{Heterogeneous, NoPML, 9, Float64}
+    @test equations isa
+          MaxwellEquations3D{Heterogeneous, NonDispersive, NoPML, 9, Float64}
     @test Trixi.nvariables(equations) == 9
     @test Trixi.varnames(Trixi.cons2cons, equations)[7:9] == ("epsilon", "mu", "sigma")
     @test Trixi.varnames(Trixi.cons2prim, equations) ==
           Trixi.varnames(Trixi.cons2cons, equations)
     @test Trixi.have_constant_speed(equations) === Trixi.False()
     @test similar(equations, Float32) isa
-          MaxwellEquations3D{Heterogeneous, NoPML, 9, Float32}
+          MaxwellEquations3D{Heterogeneous, NonDispersive, NoPML, 9, Float32}
 
     fields = SVector(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
     u = vcat(fields, SVector(4.0, 1.0, 0.5))
@@ -963,9 +967,10 @@ end
 
 @timed_testset "Uniaxial PML" begin
     equations = MaxwellEquations3D(UPML(); epsilon = 2.0, mu = 1.5)
-    @test equations isa MaxwellEquations3D{Homogeneous, UPML, 12, Float64}
+    @test equations isa
+          MaxwellEquations3D{Homogeneous, NonDispersive, UPML, 12, Float64}
     @test MaxwellEquations3D(Heterogeneous(), UPML()) isa
-          MaxwellEquations3D{Heterogeneous, UPML, 15, Float64}
+          MaxwellEquations3D{Heterogeneous, NonDispersive, UPML, 15, Float64}
     @test_throws MethodError MaxwellEquations3D(UPML(), Heterogeneous())
     @test Trixi.varnames(cons2cons, equations) ==
           ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz", "px", "py", "pz", "qx", "qy", "qz")
@@ -1029,6 +1034,69 @@ end
     lossy = MaxwellEquations3D(UPML(); epsilon = 2.0, mu = 1.5, sigma = 0.5)
     @test combined(u, x, 0.0, lossy) ≈
           source(u, x, 0.0, lossy) + source_terms_conductivity(u, x, 0.0, lossy)
+end
+
+@timed_testset "Dispersive media" begin
+    drude = DrudePole(2.0, 0.5)
+    lorentz = LorentzPole(1.0, 4.0, 0.2)
+    equations = MaxwellEquations3D(drude = (drude,))
+    @test equations isa
+          MaxwellEquations3D{Homogeneous, Dispersive{1, 0, Float64}, NoPML, 9,
+                             Float64}
+    @test Trixi.varnames(cons2cons, equations)[7:9] == ("Jx_d1", "Jy_d1", "Jz_d1")
+    @test similar(equations, Float32) isa
+          MaxwellEquations3D{Homogeneous, Dispersive{1, 0, Float32}, NoPML, 9, Float32}
+    full = MaxwellEquations3D(Heterogeneous(), UPML(); drude = (DrudePole(0.0, 0.0),),
+                              lorentz = (LorentzPole(0.0, 0.0, 0.0),))
+    @test Trixi.nvariables(full) == 6 + 3 + 5 + 9 + 6
+    @test Trixi.varnames(cons2cons, full)[10:14] ==
+          ("omega_p_d1", "gamma_d1", "delta_epsilon_l1", "omega_l1", "delta_l1")
+    @test Trixi.varnames(cons2cons, full)[(end - 5):end] ==
+          ("px", "py", "pz", "qx", "qy", "qz")
+
+    # source term at a node with all poles active
+    equations = MaxwellEquations3D(Heterogeneous(); drude = (DrudePole(0.0, 0.0),),
+                                   lorentz = (LorentzPole(0.0, 0.0, 0.0),))
+    material = Material(epsilon = 2.0, drude = (drude,), lorentz = (lorentz,))
+    state = TrixiMaxwell.material_state(material, equations)
+    @test state == SVector(2.0, 1.0, 0.0, 2.0, 0.5, 1.0, 4.0, 0.2)
+    E = SVector(1.0, -0.5, 0.25)
+    J_d = SVector(0.5, 0.0, 0.1)
+    P_l = SVector(0.1, 0.2, 0.0)
+    J_l = SVector(0.2, 0.0, -0.3)
+    u = vcat(E, SVector(0.0, 0.0, 0.0), state, J_d, P_l, J_l)
+    du = source_terms_dispersive(u, SVector(0.0, 0.0, 0.0), 0.0, equations)
+    @test du[1:3] ≈ -(J_d + J_l) / 2.0
+    @test all(iszero, du[4:14])
+    @test du[15:17] ≈ 4.0 * E - 0.5 * J_d
+    @test du[18:20] ≈ J_l
+    @test du[21:23] ≈ 16.0 * E - 16.0 * P_l - 0.2 * J_l
+    # inactive poles of the background leave the currents at rest
+    vacuum = vcat(E, SVector(0.0, 0.0, 0.0),
+                  TrixiMaxwell.material_state(Material(), equations), zeros(SVector{9}))
+    @test all(iszero, source_terms_dispersive(vacuum, nothing, 0.0, equations)[4:end])
+    @test_throws ArgumentError TrixiMaxwell.material_state(Material(drude = (drude,
+                                                                             drude)),
+                                                           equations)
+
+    # permittivity: Drude, static Lorentz limit and conductivity
+    omega = 2 * pi * 0.7
+    @test relative_permittivity(Material(drude = (DrudePole(5.0, 0.0),)), 0.7) ≈
+          1 - 25 / omega^2
+    @test relative_permittivity(Material(epsilon = 2.0, lorentz = (lorentz,)), 1e-8) ≈
+          3.0
+    @test imag(relative_permittivity(material, 0.7)) > 0
+    @test relative_permittivity(Material(sigma = 0.3), 0.7) ≈ 1 + 0.3im / omega
+
+    # the cavity mode satisfies the current equation dJ/dt = omega_p^2 E
+    cavity = MaxwellEquations3D(drude = (DrudePole(3.0, 0.0),))
+    x = SVector(0.3, -0.2, 0.1)
+    h = 1e-6
+    dJ = (initial_condition_cavity(x, 0.4 + h, cavity)[9] -
+          initial_condition_cavity(x, 0.4 - h, cavity)[9]) / (2 * h)
+    @test dJ≈9.0 * initial_condition_cavity(x, 0.4, cavity)[3] rtol=1e-6
+    @test_throws ArgumentError initial_condition_cavity(x, 0.0,
+                                                        MaxwellEquations3D(drude = (drude,)))
 end
 
 @timed_testset "Mie series" begin

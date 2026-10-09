@@ -11,9 +11,10 @@ include("test_trixi.jl")
     @timed_testset "Maxwell 3D" begin
         for RealT in (Float32, Float64)
             equations = @inferred MaxwellEquations3D(epsilon = one(RealT), mu = one(RealT))
-            @test equations isa MaxwellEquations3D{Homogeneous, NoPML, 6, RealT}
+            @test equations isa
+                  MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, RealT}
             @test (@inferred similar(equations, RealT)) isa
-                  MaxwellEquations3D{Homogeneous, NoPML, 6, RealT}
+                  MaxwellEquations3D{Homogeneous, NonDispersive, NoPML, 6, RealT}
 
             x = SVector(zero(RealT), zero(RealT), zero(RealT))
             t = zero(RealT)
@@ -76,7 +77,8 @@ include("test_trixi.jl")
         for RealT in (Float32, Float64)
             equations = @inferred MaxwellEquations3D(Heterogeneous(); epsilon = one(RealT),
                                                      mu = one(RealT), sigma = zero(RealT))
-            @test equations isa MaxwellEquations3D{Heterogeneous, NoPML, 9, RealT}
+            @test equations isa
+                  MaxwellEquations3D{Heterogeneous, NonDispersive, NoPML, 9, RealT}
 
             x = SVector(zero(RealT), zero(RealT), zero(RealT))
             t = zero(RealT)
@@ -153,9 +155,10 @@ include("test_trixi.jl")
     @timed_testset "Uniaxial PML" begin
         for RealT in (Float32, Float64)
             equations = @inferred MaxwellEquations3D(UPML(); epsilon = one(RealT))
-            @test equations isa MaxwellEquations3D{Homogeneous, UPML, 12, RealT}
+            @test equations isa
+                  MaxwellEquations3D{Homogeneous, NonDispersive, UPML, 12, RealT}
             @test (@inferred similar(equations, RealT)) isa
-                  MaxwellEquations3D{Homogeneous, UPML, 12, RealT}
+                  MaxwellEquations3D{Homogeneous, NonDispersive, UPML, 12, RealT}
             x = SVector(RealT(1.25), zero(RealT), zero(RealT))
             t = zero(RealT)
             u = SVector(ntuple(_ -> one(RealT), 12))

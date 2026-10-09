@@ -361,6 +361,39 @@ end
                                                      normal = (0.0, 0.0, 1.0))
     @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
 end
+@trixi_testset "elixir_maxwell_3d_cavity_drude.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_cavity_drude.jl"),
+                        cells_per_dimension=(4, 4, 4))
+    # the analysis masks the currents; compare the field errors with the exact mode
+    errors = analysis_callback(sol)
+    @test all(errors.l2[1:6] .< 2e-3)
+    md = mesh.md
+    u = Trixi.wrap_array(sol.u[end], semi)
+    exact(i, element) = initial_condition_cavity(SVector(md.x[i, element],
+                                                         md.y[i, element],
+                                                         md.z[i, element]),
+                                                 sol.t[end], equations)
+    @test maximum(abs(u[i, element][9] - exact(i, element)[9])
+                  for i in axes(u, 1), element in axes(u, 2)) <
+          0.15 * plasma_frequency^2 /
+          sqrt(2 * pi^2 +
+               plasma_frequency^2)
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 1000)
+end
+@trixi_testset "elixir_maxwell_3d_slab_dispersive.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_slab_dispersive.jl"))
+    for (k, f) in enumerate(frequencies)
+        airy = slab_transmittance_reflectance(sqrt(relative_permittivity(slab_material,
+                                                                         f)),
+                                              slab_thickness, f)
+        @test transmittance[k]≈airy.transmittance atol=2e-3
+        @test reflectance[k]≈airy.reflectance atol=2e-3
+    end
+    # absorption in the slab
+    @test all(transmittance .+ reflectance .< 1)
+    # Trixi's backend query allocates for states with more than 16 components
+    @test_allocations(Trixi.rhs_hyperbolic!, semi, sol, 2000)
+end
 @trixi_testset "elixir_maxwell_3d_dipole.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_maxwell_3d_dipole.jl"))
     using TrixiMaxwell: electric_field, magnetic_field

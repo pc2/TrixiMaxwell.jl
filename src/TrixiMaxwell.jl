@@ -33,6 +33,8 @@ include("analytic/mie.jl")
 include("analytic/slab.jl")
 
 export MaxwellEquations3D, Homogeneous, Heterogeneous, NoPML, UPML,
+       NonDispersive, Dispersive, DrudePole, LorentzPole, source_terms_dispersive,
+       relative_permittivity,
        FluxUpwindPenalty, flux_upwind,
        permittivity, permeability, conductivity, impedance, admittance, speed_of_light,
        source_terms_conductivity, Material, set_materials!,
